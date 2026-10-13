@@ -78,11 +78,6 @@ export const Footer: React.FC = () => {
                   Quy trình Stepper Trao đổi
                 </Link>
               </li>
-              <li>
-                <Link href="/admin" className="hover:text-emerald-400 transition-colors">
-                  Bảng Quản trị Admin
-                </Link>
-              </li>
             </ul>
           </div>
         </div>
