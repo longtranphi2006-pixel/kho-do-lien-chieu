@@ -203,18 +203,41 @@ function TradeStepperContent() {
     }
   }, [bothConfirmed, status, transaction?.id, advanceTradeStatus]);
 
-  // Parse chat messages and note from transaction.note
-  const { chatMessages, displayNote } = React.useMemo(() => {
+  // Parse chat messages and note from transaction.note with triple failsafe
+  const { chatMessages, displayNote } = React.useMemo<{ chatMessages: TradeMessage[]; displayNote: string }>(() => {
     if (!transaction?.note) return { chatMessages: [], displayNote: '' };
     try {
-      const parsed = JSON.parse(transaction.note);
-      if (typeof parsed === 'object' && parsed !== null) {
-        const msgs = Array.isArray(parsed.messages) ? parsed.messages : [];
-        const initialNote = parsed.initialNote ? String(parsed.initialNote).trim() : '';
-        return { chatMessages: msgs, displayNote: initialNote };
+      let raw = transaction.note;
+      if (typeof raw === 'string') {
+        raw = raw.trim();
+        // Handle double json serialization
+        if ((raw.startsWith('"{') && raw.endsWith('}"')) || (raw.startsWith('\'{"') && raw.endsWith('"\''))) {
+          try { raw = JSON.parse(raw); } catch {}
+        }
+      }
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (parsed && typeof parsed === 'object') {
+        const msgs = Array.isArray(parsed.messages) ? (parsed.messages as TradeMessage[]) : [];
+        let noteText = parsed.initialNote ? String(parsed.initialNote).trim() : '';
+        if (noteText.startsWith('{') || noteText.includes('"messages"')) {
+          noteText = '';
+        }
+        return { chatMessages: msgs, displayNote: noteText };
       }
     } catch {}
-    // If note is plain text, render it as initial message from receiver
+
+    // Failsafe: if note contains JSON metadata, extract with regex and NEVER leak raw JSON
+    const trimmed = transaction.note.trim();
+    if (trimmed.startsWith('{') || trimmed.includes('"messages"') || trimmed.includes('initialNote')) {
+      const match = trimmed.match(/"initialNote"\s*:\s*"([^"]*)"/);
+      const extractedNote = match ? match[1].trim() : '';
+      return {
+        chatMessages: [],
+        displayNote: extractedNote,
+      };
+    }
+
+    // Normal plain text note
     return {
       chatMessages: [
         {
@@ -222,11 +245,11 @@ function TradeStepperContent() {
           sender_id: transaction.receiver_id,
           sender_name: receiver?.full_name || 'Người nhận',
           sender_avatar: receiver?.avatar_url,
-          content: transaction.note,
+          content: trimmed,
           created_at: transaction.created_at,
         },
       ],
-      displayNote: transaction.note.trim(),
+      displayNote: trimmed,
     };
   }, [transaction?.note, transaction?.receiver_id, transaction?.created_at, receiver]);
 
@@ -610,7 +633,7 @@ function TradeStepperContent() {
           </div>
         </div>
 
-        {displayNote && (
+        {displayNote && !displayNote.startsWith('{') && !displayNote.includes('"messages"') && (
           <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-100 text-xs text-emerald-950 flex items-start gap-2">
             <MessageSquare className="w-4 h-4 text-[#0F5B4B] shrink-0 mt-0.5" />
             <div>
