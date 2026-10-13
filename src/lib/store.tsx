@@ -225,11 +225,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
         }
 
-        // 2. Profiles merge
+        // 2. Profiles merge (Smart merge: keep real full_name from being overwritten by stubs)
         if (profilesRes.data && profilesRes.data.length > 0) {
           setProfiles((prev) => {
             const map = new Map(prev.map((p) => [p.id, p]));
-            profilesRes.data!.forEach((p: Profile) => map.set(p.id, p));
+            profilesRes.data!.forEach((p: Profile) => {
+              const local = map.get(p.id);
+              if (
+                local &&
+                local.full_name &&
+                local.full_name !== 'Thành viên Liên Chiểu' &&
+                (!p.full_name || p.full_name === 'Thành viên Liên Chiểu')
+              ) {
+                // Keep local full profile and sync to Supabase
+                ensureProfileInSupabase(local);
+                map.set(p.id, { ...p, ...local });
+              } else {
+                map.set(p.id, { ...local, ...p });
+              }
+            });
             return Array.from(map.values());
           });
         }
@@ -254,13 +268,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
         }
 
-        // 5. Notifications merge
+        // 5. Notifications merge (Strictly sorted by created_at DESC so newest is always on top)
         if (notifsRes.data) {
           const dbNotifs = notifsRes.data as NotificationItem[];
           const dbNotifIds = new Set(dbNotifs.map((n) => n.id));
           setNotifications((prev) => {
             const pendingNotifs = prev.filter((n) => !dbNotifIds.has(n.id));
-            return [...pendingNotifs, ...dbNotifs];
+            const merged = [...pendingNotifs, ...dbNotifs];
+            return merged.sort(
+              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
           });
         }
       } catch (err) {
@@ -352,6 +369,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const currentUser = currentUserId ? profiles.find((p) => p.id === currentUserId) || null : null;
+
+  // Auto-sync currentUser's real profile to Supabase on mount or user switch
+  useEffect(() => {
+    if (isInitialized && currentUser && isSupabaseConfigured() && supabase) {
+      if (currentUser.full_name && currentUser.full_name !== 'Thành viên Liên Chiểu') {
+        ensureProfileInSupabase(currentUser);
+      }
+    }
+  }, [isInitialized, currentUser?.id, currentUser?.full_name]);
 
   const switchUser = (userId: string) => {
     const user = profiles.find((p) => p.id === userId);

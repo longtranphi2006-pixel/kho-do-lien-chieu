@@ -9,7 +9,10 @@ import { Home, Layers, Plus, Bell, User } from 'lucide-react';
 export const BottomNav: React.FC = () => {
   const pathname = usePathname();
   const { notifications, currentUser } = useAppStore();
-  const unreadCount = notifications.filter((n) => !n.is_read).length;
+  const myNotifications = notifications.filter(
+    (n) => !currentUser || n.user_id === currentUser.id || n.user_id === 'usr-admin-bql'
+  );
+  const unreadCount = myNotifications.filter((n) => !n.is_read).length;
 
   const navItems = [
     { label: 'Trang chủ', href: '/', icon: Home },

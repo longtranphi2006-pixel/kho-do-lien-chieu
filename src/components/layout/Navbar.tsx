@@ -14,21 +14,32 @@ import {
   User,
   LogOut,
   ChevronDown,
+  Clock,
+  ArrowRight,
+  Flame,
+  CheckCheck,
+  Star,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   const router = useRouter();
-  const { currentUser, notifications, logout } = useAppStore();
+  const { currentUser, notifications, markNotificationAsRead, logout } = useAppStore();
   const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showNotifMenu, setShowNotifMenu] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const unreadCount = notifications.filter((n) => !n.is_read).length;
+  // Filter notifications for this user (or general)
+  const myNotifications = notifications.filter(
+    (n) => !currentUser || n.user_id === currentUser.id || n.user_id === 'usr-admin-bql'
+  );
+  const unreadCount = myNotifications.filter((n) => !n.is_read).length;
+  const urgentTradeNotifs = myNotifications.filter((n) => n.type === 'trade' && !n.is_read);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,19 +126,165 @@ export const Navbar: React.FC = () => {
                 <Search className="w-5 h-5" />
               </button>
 
-              {/* Notification Bell */}
-              <Link
-                href="/notifications"
-                className="relative p-2 rounded-full text-slate-600 hover:bg-slate-100 hover:text-[#0F5B4B] transition-colors"
-                aria-label="Thông báo"
-              >
-                <Bell className="w-5 h-5" />
-                {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
-                    {unreadCount}
-                  </span>
+              {/* Notification Bell with Quick Action Dropdown */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNotifMenu(!showNotifMenu);
+                    setShowProfileMenu(false);
+                  }}
+                  className="relative p-2 rounded-full text-slate-600 hover:bg-slate-100 hover:text-[#0F5B4B] transition-colors cursor-pointer"
+                  aria-label="Thông báo"
+                >
+                  <Bell className="w-5 h-5" />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center animate-pulse">
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Notification Dropdown Popover */}
+                {showNotifMenu && (
+                  <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white shadow-2xl border border-slate-200 py-3 z-50 animate-fade-in text-sm">
+                    {/* Popover Header */}
+                    <div className="px-4 pb-2.5 border-b border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                        <Bell className="w-4 h-4 text-[#0F5B4B]" />
+                        <span>Thông báo của bạn</span>
+                        {unreadCount > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-extrabold">
+                            {unreadCount} mới
+                          </span>
+                        )}
+                      </div>
+
+                      {unreadCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            myNotifications.forEach((n) => markNotificationAsRead(n.id));
+                          }}
+                          className="text-[11px] font-semibold text-[#0F5B4B] hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <CheckCheck className="w-3.5 h-3.5" />
+                          Đọc hết
+                        </button>
+                      )}
+                    </div>
+
+                    {/* 🚨 HIGHLIGHT PINNED: Urgent trade requests on top */}
+                    {urgentTradeNotifs.length > 0 && (
+                      <div className="p-3 bg-gradient-to-r from-amber-50 to-emerald-50/50 border-b border-amber-200">
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-800 uppercase tracking-wide mb-1.5">
+                          <span className="flex h-2 w-2 relative">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                          </span>
+                          <Flame className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Yêu cầu nhận đồ cần bạn duyệt ngay</span>
+                        </div>
+                        {urgentTradeNotifs.slice(0, 1).map((notif) => (
+                          <div key={`pop-urgent-${notif.id}`} className="space-y-1.5">
+                            <div className="font-bold text-slate-900 text-xs line-clamp-1">
+                              {notif.title}
+                            </div>
+                            <div className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">
+                              {notif.content}
+                            </div>
+                            {notif.action_link && (
+                              <Link
+                                href={notif.action_link}
+                                onClick={() => {
+                                  markNotificationAsRead(notif.id);
+                                  setShowNotifMenu(false);
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0F5B4B] text-white text-xs font-bold hover:bg-[#0A3F34] shadow-xs mt-1"
+                              >
+                                <span>Vào xem & duyệt đơn ngay</span>
+                                <ArrowRight className="w-3 h-3 stroke-[2.5]" />
+                              </Link>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Recent Notifications List */}
+                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                      {myNotifications.length > 0 ? (
+                        myNotifications.slice(0, 5).map((notif) => (
+                          <Link
+                            key={`pop-${notif.id}`}
+                            href={notif.action_link || '/notifications'}
+                            onClick={() => {
+                              markNotificationAsRead(notif.id);
+                              setShowNotifMenu(false);
+                            }}
+                            className={`block p-3 transition-colors hover:bg-slate-50 ${
+                              !notif.is_read ? 'bg-emerald-50/40' : ''
+                            }`}
+                          >
+                            <div className="flex items-start gap-2.5">
+                              <div
+                                className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 text-xs ${
+                                  notif.type === 'trade'
+                                    ? 'bg-emerald-100 text-[#0F5B4B]'
+                                    : notif.type === 'review'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-teal-100 text-[#0F5B4B]'
+                                }`}
+                              >
+                                {notif.type === 'trade' ? (
+                                  <Clock className="w-3.5 h-3.5" />
+                                ) : notif.type === 'review' ? (
+                                  <Star className="w-3.5 h-3.5" />
+                                ) : (
+                                  <Bell className="w-3.5 h-3.5" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <div
+                                    className={`text-xs truncate ${
+                                      notif.is_read ? 'font-medium text-slate-800' : 'font-bold text-[#0F5B4B]'
+                                    }`}
+                                  >
+                                    {notif.title}
+                                  </div>
+                                  {!notif.is_read && (
+                                    <span className="w-2 h-2 rounded-full bg-[#0F5B4B] shrink-0" />
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                                  {notif.content}
+                                </p>
+                              </div>
+                            </div>
+                          </Link>
+                        ))
+                      ) : (
+                        <div className="p-6 text-center text-xs text-slate-400">
+                          Chưa có thông báo nào
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Popover Footer */}
+                    <div className="pt-2 px-3 border-t border-slate-100 text-center">
+                      <Link
+                        href="/notifications"
+                        onClick={() => setShowNotifMenu(false)}
+                        className="text-xs font-bold text-[#0F5B4B] hover:underline inline-flex items-center gap-1 py-1"
+                      >
+                        <span>Xem toàn bộ trung tâm thông báo</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </Link>
+                    </div>
+                  </div>
                 )}
-              </Link>
+              </div>
 
               {/* Desktop "+ Đăng đồ" button */}
               <Link
