@@ -5,6 +5,7 @@ import { Suspense } from 'react';
 import { Navbar } from '@/components/layout/Navbar';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { Footer } from '@/components/layout/Footer';
+import { OAuthListener } from '@/components/common/OAuthListener';
 
 export const metadata: Metadata = {
   title: 'Kho Đồ Liên Chiểu | Mạng Lưới Chia Sẻ & Đổi Đồ Sinh Viên P2P Đà Nẵng',
@@ -28,6 +29,7 @@ export default function RootLayout({
     <html lang="vi" className="h-full">
       <body className="min-h-full flex flex-col bg-[#F8FAFC] text-slate-900 antialiased selection:bg-[#EAF7F2] selection:text-[#0F5B4B]">
         <AppProvider>
+          <OAuthListener />
           <Suspense fallback={<div className="h-16 bg-white border-b border-slate-200" />}>
             <Navbar />
           </Suspense>

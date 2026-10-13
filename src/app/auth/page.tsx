@@ -68,13 +68,6 @@ export default function AuthPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Google / Facebook Authentic OAuth Dialog State
-  const [showGoogleChooser, setShowGoogleChooser] = useState(false);
-  const [showFacebookDialog, setShowFacebookDialog] = useState(false);
-  const [customOAuthMode, setCustomOAuthMode] = useState(false);
-  const [customOAuthName, setCustomOAuthName] = useState('');
-  const [customOAuthEmail, setCustomOAuthEmail] = useState('');
-
   // Load Google Identity Services SDK & Facebook JavaScript SDK
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -178,165 +171,32 @@ export default function AuthPage() {
     }, 400);
   };
 
-  const handleOpenGoogle = async () => {
+  const handleOpenGoogle = () => {
     setIsLoading(true);
+    const redirectUri =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/auth`
+        : 'https://kho-do-lien-chieu-ecru.vercel.app/auth';
 
-    // 1. Try official Google OAuth2 Token Client (opens real Google login window)
-    if (typeof window !== 'undefined' && window.google?.accounts?.oauth2) {
-      try {
-        const tokenClient = window.google.accounts.oauth2.initTokenClient({
-          client_id: GOOGLE_CLIENT_ID,
-          scope: 'openid profile email',
-          callback: async (tokenResponse: any) => {
-            if (tokenResponse?.error) {
-              console.warn('Google OAuth error:', tokenResponse.error);
-              setIsLoading(false);
-              setShowGoogleChooser(true);
-              return;
-            }
-            if (tokenResponse?.access_token) {
-              try {
-                const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-                });
-                const userInfo = await res.json();
-                if (userInfo?.email) {
-                  loginWithOAuth({
-                    provider: 'Google',
-                    name: userInfo.name || userInfo.email.split('@')[0],
-                    email: userInfo.email,
-                    avatar_url:
-                      userInfo.picture ||
-                      'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
-                  });
-                  setIsLoading(false);
-                  router.push('/');
-                  return;
-                }
-              } catch (err) {
-                console.warn('Failed to fetch Google profile:', err);
-              }
-            }
-            setIsLoading(false);
-            setShowGoogleChooser(true);
-          },
-        });
-        tokenClient.requestAccessToken();
-        return;
-      } catch (err) {
-        console.warn('Error launching Google Token Client:', err);
-      }
-    }
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(
+      redirectUri
+    )}&response_type=token%20id_token&scope=openid%20email%20profile&nonce=kdlc_${Date.now()}`;
 
-    // 2. Try Supabase OAuth if configured
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: { redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined },
-        });
-        return;
-      } catch (err) {
-        console.warn('Supabase OAuth error:', err);
-      }
-    }
-
-    // 3. Fallback to Google Chooser dialog
-    setIsLoading(false);
-    setShowGoogleChooser(true);
-    setCustomOAuthMode(false);
+    window.location.href = googleAuthUrl;
   };
 
-  const handleOpenFacebook = async () => {
+  const handleOpenFacebook = () => {
     setIsLoading(true);
+    const redirectUri =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/auth`
+        : 'https://kho-do-lien-chieu-ecru.vercel.app/auth';
 
-    // 1. Try official Facebook JavaScript SDK
-    if (typeof window !== 'undefined' && window.FB) {
-      try {
-        window.FB.login(
-          (response: any) => {
-            if (response?.authResponse) {
-              window.FB.api(
-                '/me',
-                { fields: 'id,name,email,picture.width(400).height(400)' },
-                (profile: any) => {
-                  if (profile && profile.name) {
-                    loginWithOAuth({
-                      provider: 'Facebook',
-                      name: profile.name,
-                      email: profile.email || `${profile.id}@facebook.user`,
-                      avatar_url:
-                        profile.picture?.data?.url ||
-                        'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=400&q=80',
-                    });
-                    setIsLoading(false);
-                    router.push('/');
-                    return;
-                  }
-                  setIsLoading(false);
-                  setShowFacebookDialog(true);
-                }
-              );
-            } else {
-              console.warn('Facebook login cancelled or not authorized');
-              setIsLoading(false);
-              setShowFacebookDialog(true);
-            }
-          },
-          { scope: 'public_profile,email' }
-        );
-        return;
-      } catch (err) {
-        console.warn('Facebook SDK login error:', err);
-      }
-    }
+    const fbAuthUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${FACEBOOK_APP_ID}&redirect_uri=${encodeURIComponent(
+      redirectUri
+    )}&state=facebook_auth&response_type=token&scope=public_profile,email`;
 
-    // 2. Try Supabase OAuth if configured
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        await supabase.auth.signInWithOAuth({
-          provider: 'facebook',
-          options: { redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined },
-        });
-        return;
-      } catch (err) {
-        console.warn('Supabase OAuth error, using Facebook Dialog:', err);
-      }
-    }
-
-    // 3. Fallback dialog
-    setIsLoading(false);
-    setShowFacebookDialog(true);
-  };
-
-  const handleSelectGoogleAccount = (name: string, email: string) => {
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      loginWithOAuth({
-        provider: 'Google',
-        name,
-        email,
-        avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
-      });
-      setShowGoogleChooser(false);
-      router.push('/');
-    }, 500);
-  };
-
-  const handleSelectFacebookAccount = (name: string, email: string) => {
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      loginWithOAuth({
-        provider: 'Facebook',
-        name,
-        email,
-        avatar_url: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=400&q=80',
-      });
-      setShowFacebookDialog(false);
-      router.push('/');
-    }, 500);
+    window.location.href = fbAuthUrl;
   };
 
   const handleQuickSelect = (id: string) => {
@@ -639,168 +499,6 @@ export default function AuthPage() {
           </div>
         </div>
       </div>
-
-      {/* Google Authentic Account Chooser Dialog */}
-      {showGoogleChooser && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl animate-fade-in space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.4l3.7 2.9C6.5 7.4 9 5 12 5z" />
-                  <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5.1 3.7-8.8z" />
-                  <path fill="#FBBC05" d="M5.6 14.7c-.2-.7-.4-1.5-.4-2.4s.2-1.7.4-2.4L1.9 7C.7 9.4 0 12 0 14.7s.7 5.3 1.9 7.7l3.7-2.9z" />
-                  <path fill="#34A853" d="M12 23.5c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2-6.4-4.8L1.9 17C3.7 20.9 7.5 23.5 12 23.5z" />
-                </svg>
-                <span className="font-bold text-slate-900 text-sm">
-                  Đăng nhập bằng Google
-                </span>
-              </div>
-              <button
-                onClick={() => setShowGoogleChooser(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="text-center space-y-1">
-              <h3 className="font-bold text-slate-800 text-sm">Chọn tài khoản Google của bạn</h3>
-              <p className="text-xs text-slate-500">để tiếp tục đến Kho Đồ Liên Chiểu</p>
-            </div>
-
-            {!customOAuthMode ? (
-              <div className="space-y-2">
-                {/* Your primary Google Account option */}
-                <button
-                  type="button"
-                  onClick={() => handleSelectGoogleAccount('Trần Phi Long', 'longtranphi2006@gmail.com')}
-                  className="w-full p-3 rounded-2xl border border-slate-200 hover:border-[#0F5B4B] hover:bg-emerald-50/50 flex items-center justify-between text-left transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-sm">
-                      L
-                    </div>
-                    <div>
-                      <div className="font-bold text-slate-900 text-xs sm:text-sm">Trần Phi Long</div>
-                      <div className="text-xs text-slate-500">longtranphi2006@gmail.com</div>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#0F5B4B]" />
-                </button>
-
-                {/* Option to use another Google account */}
-                <button
-                  type="button"
-                  onClick={() => setCustomOAuthMode(true)}
-                  className="w-full p-3 rounded-2xl border border-slate-200 hover:border-slate-300 flex items-center gap-3 text-left transition-all cursor-pointer text-xs font-semibold text-slate-700"
-                >
-                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600">
-                    <UserPlus className="w-5 h-5" />
-                  </div>
-                  <span>Sử dụng một tài khoản Google khác...</span>
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Họ và tên của bạn</label>
-                  <input
-                    type="text"
-                    value={customOAuthName}
-                    onChange={(e) => setCustomOAuthName(e.target.value)}
-                    placeholder="Nguyễn Văn B"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-hidden focus:border-[#0F5B4B]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Địa chỉ Gmail</label>
-                  <input
-                    type="email"
-                    value={customOAuthEmail}
-                    onChange={(e) => setCustomOAuthEmail(e.target.value)}
-                    placeholder="email@gmail.com"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-hidden focus:border-[#0F5B4B]"
-                  />
-                </div>
-                <div className="flex gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setCustomOAuthMode(false)}
-                    className="flex-1 py-2 rounded-xl border border-slate-200 text-xs font-semibold"
-                  >
-                    Quay lại
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!customOAuthEmail.trim()) return alert('Vui lòng nhập email');
-                      handleSelectGoogleAccount(customOAuthName.trim() || 'Người dùng Google', customOAuthEmail.trim());
-                    }}
-                    className="flex-1 py-2 rounded-xl bg-[#0F5B4B] text-white text-xs font-bold"
-                  >
-                    Đăng nhập
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div className="p-2.5 rounded-xl bg-slate-50 text-[10px] text-slate-500 leading-relaxed border border-slate-100">
-              Để bảo vệ quyền riêng tư, tài khoản Google của bạn sẽ bắt đầu với <strong>0 điểm đóng góp</strong> và tự động tích lũy điểm khi bạn tham gia trao tặng đồ dùng.
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Facebook Authentic Login Dialog */}
-      {showFacebookDialog && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl animate-fade-in space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 fill-[#1877F2]" viewBox="0 0 24 24">
-                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                </svg>
-                <span className="font-bold text-[#1877F2] text-sm">
-                  Đăng nhập bằng Facebook
-                </span>
-              </div>
-              <button
-                onClick={() => setShowFacebookDialog(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 rounded-full bg-blue-50 text-[#1877F2] font-bold text-xl flex items-center justify-center mx-auto border-2 border-blue-200">
-                f
-              </div>
-              <h3 className="font-bold text-slate-800 text-sm">Tiếp tục với tài khoản Facebook</h3>
-              <p className="text-xs text-slate-500">
-                Kho Đồ Liên Chiểu sẽ nhận được: tên, ảnh đại diện và địa chỉ email của bạn.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => handleSelectFacebookAccount('Trần Phi Long', 'longtranphi2006@facebook.com')}
-              className="w-full py-3 rounded-2xl bg-[#1877F2] text-white font-bold text-xs sm:text-sm hover:bg-blue-700 shadow-md transition-all cursor-pointer"
-            >
-              Tiếp tục dưới tên Trần Phi Long
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowFacebookDialog(false)}
-              className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
-            >
-              Hủy bỏ
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
