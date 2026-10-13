@@ -18,6 +18,8 @@ import {
   CheckCircle2,
   LogOut,
   X,
+  ChevronRight,
+  UserPlus,
 } from 'lucide-react';
 
 export default function AuthPage() {
@@ -34,10 +36,12 @@ export default function AuthPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // OAuth Modal state for custom provider login
-  const [oauthModalProvider, setOauthModalProvider] = useState<string | null>(null);
-  const [oauthName, setOauthName] = useState('');
-  const [oauthEmail, setOauthEmail] = useState('');
+  // Google / Facebook Authentic OAuth Dialog State
+  const [showGoogleChooser, setShowGoogleChooser] = useState(false);
+  const [showFacebookDialog, setShowFacebookDialog] = useState(false);
+  const [customOAuthMode, setCustomOAuthMode] = useState(false);
+  const [customOAuthName, setCustomOAuthName] = useState('');
+  const [customOAuthEmail, setCustomOAuthEmail] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,46 +77,65 @@ export default function AuthPage() {
     }, 400);
   };
 
-  const handleOpenOAuth = async (provider: 'google' | 'facebook') => {
-    // If live Supabase OAuth is configured, call official Supabase Auth OAuth
+  const handleOpenGoogle = async () => {
     if (isSupabaseConfigured() && supabase) {
       try {
         await supabase.auth.signInWithOAuth({
-          provider: provider === 'google' ? 'google' : 'facebook',
-          options: {
-            redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
-          },
+          provider: 'google',
+          options: { redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined },
         });
         return;
       } catch (err) {
-        console.warn('Supabase OAuth error, using account prompt:', err);
+        console.warn('Supabase OAuth error, using Google Account Chooser:', err);
       }
     }
-
-    // Open dedicated Account Picker modal for realistic OAuth experience
-    setOauthModalProvider(provider === 'google' ? 'Google' : 'Facebook');
-    setOauthName('');
-    setOauthEmail('');
+    setShowGoogleChooser(true);
+    setCustomOAuthMode(false);
   };
 
-  const handleConfirmOAuth = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!oauthEmail.trim()) {
-      alert('Vui lòng nhập địa chỉ email ' + oauthModalProvider);
-      return;
+  const handleOpenFacebook = async () => {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        await supabase.auth.signInWithOAuth({
+          provider: 'facebook',
+          options: { redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined },
+        });
+        return;
+      } catch (err) {
+        console.warn('Supabase OAuth error, using Facebook Dialog:', err);
+      }
     }
+    setShowFacebookDialog(true);
+  };
 
+  const handleSelectGoogleAccount = (name: string, email: string) => {
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
       loginWithOAuth({
-        provider: oauthModalProvider || 'Google',
-        email: oauthEmail.trim(),
-        name: oauthName.trim() || oauthEmail.split('@')[0],
+        provider: 'Google',
+        name,
+        email,
+        avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
       });
-      setOauthModalProvider(null);
+      setShowGoogleChooser(false);
       router.push('/');
-    }, 400);
+    }, 500);
+  };
+
+  const handleSelectFacebookAccount = (name: string, email: string) => {
+    setIsLoading(true);
+    setTimeout(() => {
+      setIsLoading(false);
+      loginWithOAuth({
+        provider: 'Facebook',
+        name,
+        email,
+        avatar_url: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=400&q=80',
+      });
+      setShowFacebookDialog(false);
+      router.push('/');
+    }, 500);
   };
 
   const handleQuickSelect = (id: string) => {
@@ -226,7 +249,7 @@ export default function AuthPage() {
         </div>
 
         {errorMessage && (
-          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
             {errorMessage}
           </div>
         )}
@@ -366,7 +389,7 @@ export default function AuthPage() {
           </div>
         </div>
 
-        {/* OAuth Buttons */}
+        {/* OAuth Buttons (Google & Facebook) */}
         <div className="space-y-3">
           <div className="relative flex items-center justify-center">
             <div className="border-t border-slate-200 w-full" />
@@ -378,8 +401,8 @@ export default function AuthPage() {
           <div className="grid grid-cols-2 gap-3 pt-1">
             <button
               type="button"
-              onClick={() => handleOpenOAuth('google')}
-              className="py-2.5 px-3 rounded-xl border border-slate-200 flex items-center justify-center gap-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+              onClick={handleOpenGoogle}
+              className="py-2.5 px-3 rounded-xl border border-slate-200 flex items-center justify-center gap-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all cursor-pointer shadow-xs active:scale-98"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24">
                 <path
@@ -404,8 +427,8 @@ export default function AuthPage() {
 
             <button
               type="button"
-              onClick={() => handleOpenOAuth('facebook')}
-              className="py-2.5 px-3 rounded-xl border border-slate-200 flex items-center justify-center gap-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+              onClick={handleOpenFacebook}
+              className="py-2.5 px-3 rounded-xl border border-slate-200 flex items-center justify-center gap-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all cursor-pointer shadow-xs active:scale-98"
             >
               <svg className="w-4 h-4 fill-[#1877F2]" viewBox="0 0 24 24">
                 <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
@@ -416,74 +439,164 @@ export default function AuthPage() {
         </div>
       </div>
 
-      {/* OAuth Custom Identity Modal */}
-      {oauthModalProvider && (
+      {/* Google Authentic Account Chooser Dialog */}
+      {showGoogleChooser && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl animate-fade-in space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-900 text-base">
-                  Đăng nhập với {oauthModalProvider}
+                <svg className="w-5 h-5" viewBox="0 0 24 24">
+                  <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.4l3.7 2.9C6.5 7.4 9 5 12 5z" />
+                  <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5.1 3.7-8.8z" />
+                  <path fill="#FBBC05" d="M5.6 14.7c-.2-.7-.4-1.5-.4-2.4s.2-1.7.4-2.4L1.9 7C.7 9.4 0 12 0 14.7s.7 5.3 1.9 7.7l3.7-2.9z" />
+                  <path fill="#34A853" d="M12 23.5c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2-6.4-4.8L1.9 17C3.7 20.9 7.5 23.5 12 23.5z" />
+                </svg>
+                <span className="font-bold text-slate-900 text-sm">
+                  Đăng nhập bằng Google
                 </span>
               </div>
               <button
-                onClick={() => setOauthModalProvider(null)}
+                onClick={() => setShowGoogleChooser(false)}
                 className="text-slate-400 hover:text-slate-600 text-sm font-bold cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleConfirmOAuth} className="space-y-3 text-xs sm:text-sm">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Họ và tên của bạn
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={oauthName}
-                  onChange={(e) => setOauthName(e.target.value)}
-                  placeholder="Ví dụ: Trần Phi Long"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-hidden focus:border-[#0F5B4B]"
-                />
-              </div>
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-slate-800 text-sm">Chọn tài khoản Google của bạn</h3>
+              <p className="text-xs text-slate-500">để tiếp tục đến Kho Đồ Liên Chiểu</p>
+            </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Địa chỉ Email {oauthModalProvider}
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={oauthEmail}
-                  onChange={(e) => setOauthEmail(e.target.value)}
-                  placeholder="name@gmail.com"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-hidden focus:border-[#0F5B4B]"
-                />
-              </div>
-
-              <div className="p-3 rounded-xl bg-[#EAF7F2] text-[#0F5B4B] text-[11px] leading-relaxed">
-                Tài khoản mới sẽ được khởi tạo với <strong>0 điểm đóng góp ban đầu</strong>. Điểm sẽ tăng dần (+20 điểm) sau mỗi giao dịch trao đồ thành công!
-              </div>
-
-              <div className="pt-2 flex gap-2">
+            {!customOAuthMode ? (
+              <div className="space-y-2">
+                {/* Your primary Google Account option */}
                 <button
                   type="button"
-                  onClick={() => setOauthModalProvider(null)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 cursor-pointer"
+                  onClick={() => handleSelectGoogleAccount('Trần Phi Long', 'longtranphi2006@gmail.com')}
+                  className="w-full p-3 rounded-2xl border border-slate-200 hover:border-[#0F5B4B] hover:bg-emerald-50/50 flex items-center justify-between text-left transition-all cursor-pointer group"
                 >
-                  Hủy
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-sm">
+                      L
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-900 text-xs sm:text-sm">Trần Phi Long</div>
+                      <div className="text-xs text-slate-500">longtranphi2006@gmail.com</div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#0F5B4B]" />
                 </button>
+
+                {/* Option to use another Google account */}
                 <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="flex-1 py-2.5 rounded-xl bg-[#0F5B4B] text-white font-bold hover:bg-[#0A3F34] cursor-pointer disabled:opacity-50"
+                  type="button"
+                  onClick={() => setCustomOAuthMode(true)}
+                  className="w-full p-3 rounded-2xl border border-slate-200 hover:border-slate-300 flex items-center gap-3 text-left transition-all cursor-pointer text-xs font-semibold text-slate-700"
                 >
-                  {isLoading ? 'Đang vào...' : 'Xác nhận'}
+                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600">
+                    <UserPlus className="w-5 h-5" />
+                  </div>
+                  <span>Sử dụng một tài khoản Google khác...</span>
                 </button>
               </div>
-            </form>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Họ và tên của bạn</label>
+                  <input
+                    type="text"
+                    value={customOAuthName}
+                    onChange={(e) => setCustomOAuthName(e.target.value)}
+                    placeholder="Nguyễn Văn B"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-hidden focus:border-[#0F5B4B]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Địa chỉ Gmail</label>
+                  <input
+                    type="email"
+                    value={customOAuthEmail}
+                    onChange={(e) => setCustomOAuthEmail(e.target.value)}
+                    placeholder="email@gmail.com"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-hidden focus:border-[#0F5B4B]"
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setCustomOAuthMode(false)}
+                    className="flex-1 py-2 rounded-xl border border-slate-200 text-xs font-semibold"
+                  >
+                    Quay lại
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!customOAuthEmail.trim()) return alert('Vui lòng nhập email');
+                      handleSelectGoogleAccount(customOAuthName.trim() || 'Người dùng Google', customOAuthEmail.trim());
+                    }}
+                    className="flex-1 py-2 rounded-xl bg-[#0F5B4B] text-white text-xs font-bold"
+                  >
+                    Đăng nhập
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="p-2.5 rounded-xl bg-slate-50 text-[10px] text-slate-500 leading-relaxed border border-slate-100">
+              Để bảo vệ quyền riêng tư, tài khoản Google của bạn sẽ bắt đầu với <strong>0 điểm đóng góp</strong> và tự động tích lũy điểm khi bạn tham gia trao tặng đồ dùng.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Facebook Authentic Login Dialog */}
+      {showFacebookDialog && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl animate-fade-in space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 fill-[#1877F2]" viewBox="0 0 24 24">
+                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                </svg>
+                <span className="font-bold text-[#1877F2] text-sm">
+                  Đăng nhập bằng Facebook
+                </span>
+              </div>
+              <button
+                onClick={() => setShowFacebookDialog(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 rounded-full bg-blue-50 text-[#1877F2] font-bold text-xl flex items-center justify-center mx-auto border-2 border-blue-200">
+                f
+              </div>
+              <h3 className="font-bold text-slate-800 text-sm">Tiếp tục với tài khoản Facebook</h3>
+              <p className="text-xs text-slate-500">
+                Kho Đồ Liên Chiểu sẽ nhận được: tên, ảnh đại diện và địa chỉ email của bạn.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => handleSelectFacebookAccount('Trần Phi Long', 'longtranphi2006@facebook.com')}
+              className="w-full py-3 rounded-2xl bg-[#1877F2] text-white font-bold text-xs sm:text-sm hover:bg-blue-700 shadow-md transition-all cursor-pointer"
+            >
+              Tiếp tục dưới tên Trần Phi Long
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowFacebookDialog(false)}
+              className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
+            >
+              Hủy bỏ
+            </button>
           </div>
         </div>
       )}
