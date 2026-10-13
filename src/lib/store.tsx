@@ -133,10 +133,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (found && found.full_name && found.full_name !== 'Thành viên Liên Chiểu') {
           pObj = found;
         } else {
-          // Check DB first to avoid overwriting a real profile with a generic stub
+          // Check DB first to avoid overwriting a real profile
           const { data: dbUser } = await supabase.from('profiles').select('*').eq('id', profileOrId).maybeSingle();
-          if (dbUser && dbUser.full_name && dbUser.full_name !== 'Thành viên Liên Chiểu') {
-            // Found real profile in Supabase! Cache into local profiles
+          if (dbUser) {
+            // Found profile in Supabase! Cache into local profiles and do NOT overwrite
             setProfiles((prev) => {
               const existingIdx = prev.findIndex((p) => p.id === dbUser.id);
               if (existingIdx >= 0) {
@@ -148,7 +148,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
             return;
           }
-          pObj = found || dbUser || {
+          // Only create minimal row if user DOES NOT exist in DB at all (for FK integrity)
+          pObj = {
             id: profileOrId,
             full_name: 'Thành viên Liên Chiểu',
             role: 'user',
@@ -163,6 +164,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pObj = profileOrId;
       }
       if (!pObj || !pObj.id) return;
+
+      // Double-check: if pObj has generic stub name, never overwrite an existing row
+      if (pObj.full_name === 'Thành viên Liên Chiểu') {
+        const { data: existingDb } = await supabase.from('profiles').select('id, full_name').eq('id', pObj.id).maybeSingle();
+        if (existingDb && existingDb.full_name && existingDb.full_name !== 'Thành viên Liên Chiểu') {
+          return;
+        }
+      }
+
       await supabase.from('profiles').upsert({
         id: pObj.id,
         full_name: pObj.full_name || 'Thành viên Liên Chiểu',
@@ -259,11 +269,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 // Keep local full profile and sync to Supabase
                 ensureProfileInSupabase(local);
                 map.set(p.id, { ...p, ...local });
+              } else if (p.full_name && p.full_name !== 'Thành viên Liên Chiểu') {
+                // DB has real name: replace local stub with DB real profile!
+                map.set(p.id, p);
               } else {
                 map.set(p.id, { ...local, ...p });
               }
             });
-            return Array.from(map.values());
+            const merged = Array.from(map.values());
+            try {
+              localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(merged));
+            } catch {}
+            return merged;
           });
         }
 
@@ -471,14 +488,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const existing = profiles.find((p) => p.email && p.email.toLowerCase() === cleanEmail);
 
     if (existing) {
+      const updated: Profile = {
+        ...existing,
+        full_name: params.name || existing.full_name,
+        avatar_url: params.avatar_url || existing.avatar_url,
+      };
+      setProfiles((prev) => {
+        const list = prev.map((p) => (p.id === existing.id ? updated : p));
+        try {
+          localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(list));
+        } catch {}
+        return list;
+      });
       setCurrentUserId(existing.id);
       try {
         localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, existing.id);
       } catch {}
       if (isSupabaseConfigured() && supabase) {
-        ensureProfileInSupabase(existing);
+        ensureProfileInSupabase(updated);
       }
-      return existing;
+      return updated;
     }
 
     const newProfile: Profile = {
@@ -565,19 +594,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const item = items.find((i) => i.id === id);
     if (!item) return undefined;
     let donor = profiles.find((p) => p.id === item.user_id);
-    if ((!donor || donor.full_name === 'Thành viên Liên Chiểu') && (item.donor || item.donor_name)) {
-      donor = item.donor || {
-        id: item.user_id,
-        full_name: item.donor_name || 'Người đăng',
-        avatar_url: item.donor_avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
-        university: 'Đại học Đà Nẵng',
-        is_verified: true,
-        reputation_score: 50,
-        items_given_count: 1,
-        completed_trades_count: 0,
-        role: 'user',
-        created_at: item.created_at,
-      };
+    if (!donor || !donor.full_name || donor.full_name === 'Thành viên Liên Chiểu') {
+      if (currentUser && currentUser.id === item.user_id && currentUser.full_name !== 'Thành viên Liên Chiểu') {
+        donor = currentUser;
+      } else if (item.donor && item.donor.full_name !== 'Thành viên Liên Chiểu') {
+        donor = item.donor;
+      } else {
+        const realProfile = profiles.find(
+          (p) =>
+            p.full_name &&
+            p.full_name !== 'Thành viên Liên Chiểu' &&
+            (p.id === item.user_id || (item.user_id.startsWith('usr-oauth-') && p.id.startsWith('usr-oauth-')))
+        );
+        if (realProfile) {
+          donor = realProfile;
+        } else if (item.donor_name) {
+          donor = {
+            id: item.user_id,
+            full_name: item.donor_name,
+            avatar_url: item.donor_avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
+            university: 'Trường Đại học Bách khoa - ĐHĐN',
+            is_verified: true,
+            reputation_score: 50,
+            items_given_count: 1,
+            completed_trades_count: 0,
+            role: 'user',
+            created_at: item.created_at,
+          };
+        }
+      }
     }
     return { ...item, donor };
   };
