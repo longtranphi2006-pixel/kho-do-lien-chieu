@@ -36,6 +36,8 @@ interface AppContextType {
   }) => Transaction;
   advanceTradeStatus: (transactionId: string, nextStatus: TradeStatus) => void;
   confirmTradeHandover: (transactionId: string, role: 'giver' | 'receiver') => void;
+  cancelTrade: (transactionId: string, reason?: string) => Promise<void>;
+  sendTradeMessage: (transactionId: string, content: string) => Promise<void>;
   reviews: Review[];
   submitReview: (params: {
     transactionId: string;
@@ -1072,6 +1074,140 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const getUserAliasIds = (userId: string | null | undefined): string[] => {
+    if (!userId) return [];
+    const baseProfile = profiles.find((p) => p.id === userId) || currentUser;
+    const ids = new Set<string>([userId]);
+    if (baseProfile?.email) {
+      profiles
+        .filter((p) => p.email && p.email.toLowerCase() === baseProfile.email?.toLowerCase())
+        .forEach((p) => ids.add(p.id));
+    }
+    if (baseProfile?.email?.toLowerCase().includes('longtranphi22006') || baseProfile?.full_name === 'Trần Đức Long') {
+      ids.add('usr-oauth-1791897070645');
+      ids.add('usr-oauth-1791902102209');
+    }
+    if (baseProfile?.email?.toLowerCase().includes('longtranphi2006') || baseProfile?.full_name?.includes('18.Trần Lê Phi Long')) {
+      ids.add('usr-oauth-1791899728239');
+    }
+    return Array.from(ids);
+  };
+
+  const cancelTrade = async (transactionId: string, reason?: string) => {
+    const trans = transactions.find((t) => t.id === transactionId);
+    if (!trans) throw new Error('Không tìm thấy phiên giao dịch');
+
+    const myAliasIds = getUserAliasIds(currentUser?.id);
+    const isCallerGiver = myAliasIds.includes(trans.giver_id);
+    const isCallerReceiver = myAliasIds.includes(trans.receiver_id);
+
+    // Rule: "chỉ dc hủy trước bước xác nhận của ng kia"
+    const otherAlreadyConfirmed = isCallerGiver
+      ? Boolean(trans.receiver_confirmed)
+      : isCallerReceiver
+      ? Boolean(trans.giver_confirmed)
+      : Boolean(trans.giver_confirmed || trans.receiver_confirmed);
+
+    if (otherAlreadyConfirmed) {
+      throw new Error('Không thể hủy giao dịch vì đối phương đã bấm xác nhận bàn giao!');
+    }
+    if (trans.status === 'COMPLETED') {
+      throw new Error('Không thể hủy giao dịch đã hoàn tất!');
+    }
+
+    const cancelerName = currentUser?.full_name || 'Một bên tham gia';
+    const otherUserId = isCallerGiver ? trans.receiver_id : trans.giver_id;
+    const targetItem = getItemById(trans.item_id) || items.find((i) => i.id === trans.item_id);
+
+    // 1. Update transaction status to CANCELLED
+    setTransactions((prev) =>
+      prev.map((t) => (t.id === transactionId ? { ...t, status: 'CANCELLED' as TradeStatus } : t))
+    );
+
+    // 2. Restore item status back to ACTIVE so other students can request it
+    updateItem(trans.item_id, { status: 'ACTIVE' });
+
+    // 3. Sync to Supabase
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('transactions').update({ status: 'CANCELLED' }).eq('id', transactionId).then(() => {});
+      supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id).then(() => {});
+    }
+
+    // 4. Notify other party
+    const cancelNotif: NotificationItem = {
+      id: `notif-cancel-${Date.now()}`,
+      user_id: otherUserId,
+      title: 'Phiên trao đổi đã được hủy ⚠️',
+      content: `${cancelerName} đã hủy phiên trao đổi món "${targetItem?.title || 'đồ dùng'}". ${reason ? `Lý do: "${reason}". ` : ''}Món đồ đã được mở lại công khai.`,
+      is_read: false,
+      action_link: `/items/${trans.item_id}`,
+      type: 'trade',
+      created_at: new Date().toISOString(),
+    };
+    pushNotification(cancelNotif);
+  };
+
+  const sendTradeMessage = async (transactionId: string, content: string) => {
+    if (!content.trim()) return;
+    const trans = transactions.find((t) => t.id === transactionId);
+    if (!trans) return;
+
+    let chatData: { initialNote: string; messages: any[] } = {
+      initialNote: '',
+      messages: [],
+    };
+
+    if (trans.note) {
+      try {
+        const parsed = JSON.parse(trans.note);
+        if (Array.isArray(parsed.messages)) {
+          chatData = parsed;
+        } else {
+          chatData.initialNote = trans.note;
+        }
+      } catch {
+        chatData.initialNote = trans.note;
+      }
+    }
+
+    const senderId = currentUser?.id || 'usr-anonymous';
+    const senderName = currentUser?.full_name || 'Bạn';
+    const senderAvatar = currentUser?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80';
+
+    const newMsg = {
+      id: `msg-${Date.now()}`,
+      sender_id: senderId,
+      sender_name: senderName,
+      sender_avatar: senderAvatar,
+      content: content.trim(),
+      created_at: new Date().toISOString(),
+    };
+
+    chatData.messages.push(newMsg);
+    const updatedNote = JSON.stringify(chatData);
+
+    setTransactions((prev) =>
+      prev.map((t) => (t.id === transactionId ? { ...t, note: updatedNote } : t))
+    );
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('transactions').update({ note: updatedNote }).eq('id', transactionId).then(() => {});
+    }
+
+    const otherUserId = senderId === trans.giver_id ? trans.receiver_id : trans.giver_id;
+    const msgNotif: NotificationItem = {
+      id: `notif-msg-${Date.now()}`,
+      user_id: otherUserId,
+      title: `Tin nhắn mới từ ${senderName} 💬`,
+      content: content.trim().length > 60 ? `${content.trim().slice(0, 60)}...` : content.trim(),
+      is_read: false,
+      action_link: `/trades/${transactionId}`,
+      type: 'trade',
+      created_at: new Date().toISOString(),
+    };
+    pushNotification(msgNotif);
+  };
+
   const submitReview = (params: {
     transactionId: string;
     revieweeId: string;
@@ -1164,6 +1300,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createTradeRequest,
         advanceTradeStatus,
         confirmTradeHandover,
+        cancelTrade,
+        sendTradeMessage,
         reviews,
         submitReview,
         notifications,

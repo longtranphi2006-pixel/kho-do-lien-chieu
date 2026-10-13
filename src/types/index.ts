@@ -47,6 +47,15 @@ export interface Item {
   donor?: Profile;
 }
 
+export interface TradeMessage {
+  id: string;
+  sender_id: string;
+  sender_name?: string;
+  sender_avatar?: string;
+  content: string;
+  created_at: string;
+}
+
 export interface Transaction {
   id: string;
   item_id: string;

@@ -19,24 +19,50 @@ import {
   Check,
   Sparkles,
   MessageSquare,
+  MessageCircle,
   ArrowLeft,
   Lock,
   User,
   AlertCircle,
   HelpCircle,
+  Send,
+  XCircle,
+  Trash2,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
+import { TradeMessage } from '@/types';
 
 function TradeStepperContent() {
   const params = useParams();
   const router = useRouter();
   const tradeId = params.id as string;
 
-  const { getTransactionById, advanceTradeStatus, confirmTradeHandover, currentUser, allUsers } = useAppStore();
+  const {
+    getTransactionById,
+    advanceTradeStatus,
+    confirmTradeHandover,
+    cancelTrade,
+    sendTradeMessage,
+    currentUser,
+    allUsers,
+  } = useAppStore();
   const transaction = getTransactionById(tradeId);
 
   const [isUpdating, setIsUpdating] = useState(false);
   // Allow user to switch viewing perspective during manual testing if needed
   const [selectedRole, setSelectedRole] = useState<'auto' | 'giver' | 'receiver'>('auto');
+
+  // Chat state
+  const [chatInput, setChatInput] = useState('');
+  const [isSendingMsg, setIsSendingMsg] = useState(false);
+  const chatBottomRef = React.useRef<HTMLDivElement>(null);
+
+  // Cancellation state
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const myUserIds = React.useMemo(() => {
     const ids = new Set<string>();
@@ -146,6 +172,73 @@ function TradeStepperContent() {
         router.push(`/trades/${transaction.id}/completed`);
       }
     }, 450);
+  };
+
+  // Rule: "chỉ dc hủy trước bước xác nhận của ng kia"
+  const otherAlreadyConfirmed = isActuallyGiver
+    ? Boolean(transaction.receiver_confirmed)
+    : isActuallyReceiver
+    ? Boolean(transaction.giver_confirmed)
+    : Boolean(transaction.giver_confirmed || transaction.receiver_confirmed);
+
+  const canCancel =
+    isParticipant &&
+    transaction.status !== 'COMPLETED' &&
+    transaction.status !== 'CANCELLED' &&
+    !otherAlreadyConfirmed;
+
+  const isCancelled = transaction.status === 'CANCELLED';
+
+  // Parse chat messages from transaction.note
+  const chatMessages: TradeMessage[] = React.useMemo(() => {
+    if (!transaction?.note) return [];
+    try {
+      const parsed = JSON.parse(transaction.note);
+      if (Array.isArray(parsed.messages)) {
+        return parsed.messages;
+      }
+    } catch {}
+    // If note is plain text, render it as initial message from receiver
+    return [
+      {
+        id: 'msg-initial',
+        sender_id: transaction.receiver_id,
+        sender_name: receiver?.full_name || 'Người nhận',
+        sender_avatar: receiver?.avatar_url,
+        content: transaction.note,
+        created_at: transaction.created_at,
+      },
+    ];
+  }, [transaction?.note, transaction?.receiver_id, transaction?.created_at, receiver]);
+
+  const handleSendChatMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!chatInput.trim() || isSendingMsg) return;
+    setIsSendingMsg(true);
+    try {
+      await sendTradeMessage(transaction.id, chatInput.trim());
+      setChatInput('');
+      setTimeout(() => {
+        chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSendingMsg(false);
+    }
+  };
+
+  const handleConfirmCancel = async () => {
+    setIsCancelling(true);
+    setCancelError(null);
+    try {
+      await cancelTrade(transaction.id, cancelReason);
+      setShowCancelModal(false);
+    } catch (err: any) {
+      setCancelError(err?.message || 'Lỗi khi hủy giao dịch');
+    } finally {
+      setIsCancelling(false);
+    }
   };
 
   return (
@@ -721,8 +814,37 @@ function TradeStepperContent() {
           </div>
         )}
 
+        {/* CANCELLED STATE */}
+        {isCancelled && (
+          <div className="p-6 rounded-2xl bg-rose-50 border border-rose-200 text-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <XCircle className="w-6 h-6 stroke-[2.5]" />
+            </div>
+            <div className="font-extrabold text-rose-950 text-base sm:text-lg">
+              Phiên trao đổi này đã được hủy
+            </div>
+            <p className="text-xs text-rose-700 max-w-md mx-auto">
+              Một trong hai bên đã hủy giao dịch. Món đồ đã được tự động mở lại trên Kho đồ Liên Chiểu để sinh viên khác tiếp tục nhận.
+            </p>
+            <div className="pt-2 flex justify-center gap-3">
+              <Link
+                href="/items"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white text-xs sm:text-sm font-bold hover:bg-[#0A3F34] shadow-sm"
+              >
+                Khám phá Kho đồ
+              </Link>
+              <Link
+                href="/trades"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-white border border-slate-300 text-slate-700 text-xs sm:text-sm font-semibold hover:bg-slate-50"
+              >
+                Danh sách trao đổi của tôi
+              </Link>
+            </div>
+          </div>
+        )}
+
         {/* STEP 4: COMPLETED */}
-        {isCompleted && (
+        {isCompleted && !isCancelled && (
           <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-3">
             <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto">
               <Check className="w-6 h-6 stroke-[3]" />
@@ -743,7 +865,274 @@ function TradeStepperContent() {
             </div>
           </div>
         )}
+
+        {/* CANCELLATION FOOTER BAR (chỉ dc hủy trước bước xác nhận của ng kia) */}
+        {!isCompleted && !isCancelled && isParticipant && (
+          <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="text-slate-500">
+              {canCancel ? (
+                <span>Cần thay đổi lịch hẹn hoặc không thể trao đổi được nữa?</span>
+              ) : (
+                <span className="flex items-center gap-1 text-amber-700 font-medium">
+                  <Lock className="w-3.5 h-3.5 shrink-0" />
+                  Đối phương đã bấm xác nhận bàn giao đồ. Không thể hủy giao dịch lúc này.
+                </span>
+              )}
+            </div>
+
+            {canCancel && (
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(true)}
+                className="self-start sm:self-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 font-semibold transition-colors cursor-pointer"
+              >
+                <XCircle className="w-3.5 h-3.5" /> Hủy phiên trao đổi
+              </button>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* P2P PRIVATE CHAT SECTION (Chỉ giữa 2 người trao đổi với nhau) */}
+      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden space-y-0">
+        {/* Chat Header */}
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#0F5B4B] flex items-center justify-center text-white shrink-0 shadow-md">
+              <MessageCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm sm:text-base text-white">
+                  Kênh Chat Trực Tiếp P2P
+                </h3>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
+                  Riêng tư 2 bên
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                {isActuallyGiver
+                  ? `Nhắn tin trực tiếp với bạn nhận: ${receiver?.full_name || 'Người nhận'}`
+                  : `Nhắn tin trực tiếp với chủ món đồ: ${giver?.full_name || 'Người trao tặng'}`}
+              </p>
+            </div>
+          </div>
+
+          <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-slate-400">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Sẵn sàng trao đổi</span>
+          </div>
+        </div>
+
+        {/* Chat Body */}
+        {isParticipant ? (
+          <div className="p-4 sm:p-5 space-y-4">
+            {/* Messages Scroll Area */}
+            <div className="h-64 sm:h-72 overflow-y-auto space-y-3 pr-2 scrollbar-thin">
+              {chatMessages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 space-y-2 py-8">
+                  <MessageSquare className="w-8 h-8 stroke-[1.5]" />
+                  <p className="text-xs">Chưa có tin nhắn nào trong phiên này.</p>
+                  <p className="text-[11px] text-slate-400">
+                    Hãy gửi lời chào hoặc hẹn địa điểm gặp mặt cụ thể tại đây!
+                  </p>
+                </div>
+              ) : (
+                chatMessages.map((msg) => {
+                  const isMine = myUserIds.has(msg.sender_id);
+                  const isGiverMsg = msg.sender_id === transaction.giver_id;
+
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex items-start gap-2.5 ${isMine ? 'justify-end' : 'justify-start'}`}
+                    >
+                      {!isMine && (
+                        <div className="w-7 h-7 rounded-full bg-slate-200 overflow-hidden shrink-0 mt-0.5">
+                          {msg.sender_avatar ? (
+                            <img src={msg.sender_avatar} alt={msg.sender_name} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-slate-600">
+                              {(msg.sender_name || 'U').charAt(0)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className={`max-w-[78%] sm:max-w-[65%] space-y-1 ${isMine ? 'items-end' : 'items-start'}`}>
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-400 px-1">
+                          <span className="font-semibold text-slate-600">
+                            {isMine ? 'Bạn' : msg.sender_name || 'Đối tác'}
+                          </span>
+                          <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 text-slate-500 font-medium">
+                            {isGiverMsg ? 'Bên Cho' : 'Bên Nhận'}
+                          </span>
+                          <span>•</span>
+                          <span>
+                            {msg.created_at
+                              ? new Date(msg.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                              : 'Vừa xong'}
+                          </span>
+                        </div>
+
+                        <div
+                          className={`p-3 rounded-2xl text-xs leading-relaxed ${
+                            isMine
+                              ? 'bg-[#0F5B4B] text-white rounded-tr-xs shadow-xs'
+                              : 'bg-slate-100 text-slate-800 rounded-tl-xs border border-slate-200/80'
+                          }`}
+                        >
+                          {msg.content}
+                        </div>
+                      </div>
+
+                      {isMine && (
+                        <div className="w-7 h-7 rounded-full bg-emerald-100 overflow-hidden shrink-0 mt-0.5 border border-[#0F5B4B]/30">
+                          {currentUser?.avatar_url ? (
+                            <img src={currentUser.avatar_url} alt="Tôi" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-[#0F5B4B]">
+                              {(currentUser?.full_name || 'T').charAt(0)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+              <div ref={chatBottomRef} />
+            </div>
+
+            {/* Quick Suggestion Chips */}
+            <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+              <span className="text-[11px] font-semibold text-slate-400 shrink-0">Gợi ý nhanh:</span>
+              <button
+                type="button"
+                onClick={() => setChatInput('Mình đã đến điểm hẹn rồi nhé!')}
+                className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-slate-600 text-[11px] font-medium shrink-0 transition-colors cursor-pointer"
+              >
+                📍 Đã đến điểm hẹn
+              </button>
+              <button
+                type="button"
+                onClick={() => setChatInput('Mình đang mặc áo khoác ở cổng chính.')}
+                className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-slate-600 text-[11px] font-medium shrink-0 transition-colors cursor-pointer"
+              >
+                👕 Mô tả vị trí / áo
+              </button>
+              <button
+                type="button"
+                onClick={() => setChatInput('Khoảng 5-10 phút nữa mình có mặt ạ!')}
+                className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-slate-600 text-[11px] font-medium shrink-0 transition-colors cursor-pointer"
+              >
+                ⏳ 5-10 phút nữa đến
+              </button>
+              <button
+                type="button"
+                onClick={() => setChatInput('Bạn đến điểm hẹn chưa ạ?')}
+                className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-slate-600 text-[11px] font-medium shrink-0 transition-colors cursor-pointer"
+              >
+                👋 Bạn đến chưa?
+              </button>
+            </div>
+
+            {/* Chat Input Form */}
+            <form onSubmit={handleSendChatMessage} className="flex items-center gap-2 pt-1">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Nhắn tin với đối tác trao đồ..."
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0F5B4B] text-xs sm:text-sm bg-slate-50/50"
+              />
+              <button
+                type="submit"
+                disabled={!chatInput.trim() || isSendingMsg}
+                className="px-4 py-2.5 rounded-xl bg-[#0F5B4B] hover:bg-[#0A3F34] text-white font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-40 cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5" /> Gửi
+              </button>
+            </form>
+          </div>
+        ) : (
+          <div className="p-6 text-center text-xs text-slate-500 space-y-1">
+            <Lock className="w-6 h-6 text-slate-400 mx-auto" />
+            <div className="font-semibold text-slate-700">Khung chat riêng tư P2P</div>
+            <p>Tính năng trò chuyện chỉ dành riêng cho 2 bên tham gia trong giao dịch này.</p>
+          </div>
+        )}
+      </div>
+
+      {/* CANCELLATION CONFIRMATION MODAL */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-fade-in">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5 text-rose-600">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-rose-600" />
+                </div>
+                <h3 className="font-bold text-base text-slate-900">
+                  Xác nhận hủy phiên trao đổi
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowCancelModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-600 space-y-2">
+              <p>
+                Bạn có chắc chắn muốn hủy phiên trao đổi món <strong>"{item?.title}"</strong> không?
+              </p>
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] leading-relaxed">
+                ℹ️ <strong>Lưu ý:</strong> Khi bạn hủy, món đồ sẽ được đưa trở lại Kho Đồ Liên Chiểu ở trạng thái sẵn sàng để các bạn sinh viên khác có thể nhận.
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-slate-700">
+                Lý do hủy (tùy chọn)
+              </label>
+              <input
+                type="text"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Ví dụ: Bận lịch học đột xuất, không đến được..."
+                className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:border-[#0F5B4B]"
+              />
+            </div>
+
+            {cancelError && (
+              <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
+                {cancelError}
+              </div>
+            )}
+
+            <div className="pt-2 flex items-center justify-end gap-2 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Quay lại
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCancel}
+                disabled={isCancelling}
+                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer shadow-sm disabled:opacity-50"
+              >
+                {isCancelling ? 'Đang hủy...' : 'Đồng ý hủy giao dịch'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
