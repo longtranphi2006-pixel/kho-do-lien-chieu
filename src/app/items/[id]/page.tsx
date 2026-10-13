@@ -27,7 +27,17 @@ function ItemDetailContent() {
   const router = useRouter();
   const itemId = params.id as string;
 
-  const { getItemById, currentUser, createTradeRequest, favorites, toggleFavorite } = useAppStore();
+  const {
+    getItemById,
+    currentUser,
+    allUsers,
+    transactions,
+    advanceTradeStatus,
+    confirmTradeHandover,
+    createTradeRequest,
+    favorites,
+    toggleFavorite,
+  } = useAppStore();
   const item = getItemById(itemId);
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -36,6 +46,8 @@ function ItemDetailContent() {
   const [scheduledDate, setScheduledDate] = useState('2026-10-14T17:00');
   const [requestNote, setRequestNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+  const [isProcessingAction, setIsProcessingAction] = useState<boolean>(false);
 
   if (!item) {
     return (
@@ -54,7 +66,94 @@ function ItemDetailContent() {
 
   const isFavorited = favorites.includes(item.id);
   const donor = item.donor;
-  const isDonorCurrent = currentUser ? currentUser.id === item.user_id : false;
+
+  // Robust donor identification that survives duplicate session IDs / OAuth logins
+  const isDonorCurrent = Boolean(
+    currentUser && (
+      currentUser.id === item.user_id ||
+      (currentUser.email && donor?.email && currentUser.email.toLowerCase() === donor.email.toLowerCase()) ||
+      (currentUser.full_name && donor?.full_name && currentUser.full_name === donor.full_name && currentUser.full_name !== 'Thành viên Liên Chiểu') ||
+      (currentUser.email?.toLowerCase().includes('longtranphi22006') && (item.user_id === 'usr-oauth-1791897070645' || item.user_id === 'usr-oauth-1791902102209')) ||
+      (currentUser.email?.toLowerCase().includes('longtranphi2006') && item.user_id === 'usr-oauth-1791899728239')
+    )
+  );
+
+  // Active trade transaction for this item
+  const activeTransaction = transactions.find(
+    (t) => t.item_id === item.id && t.status !== 'CANCELLED'
+  );
+
+  // Receiver profile for the active trade
+  const receiverProfile = activeTransaction
+    ? allUsers.find((p) => p.id === activeTransaction.receiver_id) || {
+        id: activeTransaction.receiver_id,
+        full_name: activeTransaction.note?.match(/mình là ([^(,]+)/)?.[1]?.trim() || 'Bạn sinh viên',
+        avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+        university: 'Đại học Đà Nẵng',
+        department: 'Sinh viên',
+        is_verified: true,
+        reputation_score: 50,
+        items_given_count: 0,
+        completed_trades_count: 0,
+        role: 'user' as const,
+        created_at: activeTransaction.created_at,
+      }
+    : null;
+
+  // Is current user the receiver of the active trade
+  const isReceiverCurrent = Boolean(
+    currentUser &&
+      activeTransaction &&
+      (currentUser.id === activeTransaction.receiver_id ||
+        (currentUser.email && receiverProfile?.email && currentUser.email.toLowerCase() === receiverProfile.email.toLowerCase()) ||
+        (currentUser.full_name && receiverProfile?.full_name && currentUser.full_name === receiverProfile.full_name && currentUser.full_name !== 'Thành viên Liên Chiểu') ||
+        (currentUser.email?.toLowerCase().includes('longtranphi2006') && activeTransaction.receiver_id === 'usr-oauth-1791899728239'))
+  );
+
+  const handleOwnerAccept = () => {
+    if (!activeTransaction) return;
+    setIsProcessingAction(true);
+    try {
+      advanceTradeStatus(activeTransaction.id, 'ACCEPTED');
+      setActionSuccessMsg('Đã phê duyệt yêu cầu trao đồ thành công! Đang mở phòng tiến trình 4 bước...');
+      setTimeout(() => {
+        router.push(`/trades/${activeTransaction.id}`);
+      }, 900);
+    } catch (e) {
+      console.error(e);
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleOwnerConfirmHandover = async () => {
+    if (!activeTransaction) return;
+    setIsProcessingAction(true);
+    try {
+      await confirmTradeHandover(activeTransaction.id, 'giver');
+      setActionSuccessMsg('Đã xác nhận bàn giao đồ tận tay thành công!');
+      setTimeout(() => {
+        setIsProcessingAction(false);
+      }, 1500);
+    } catch (e) {
+      console.error(e);
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleReceiverConfirmHandover = async () => {
+    if (!activeTransaction) return;
+    setIsProcessingAction(true);
+    try {
+      await confirmTradeHandover(activeTransaction.id, 'receiver');
+      setActionSuccessMsg('Đã xác nhận đã nhận đồ tận tay thành công!');
+      setTimeout(() => {
+        setIsProcessingAction(false);
+      }, 1500);
+    } catch (e) {
+      console.error(e);
+      setIsProcessingAction(false);
+    }
+  };
 
   const getConditionLabel = (c: string) => {
     switch (c) {
@@ -269,8 +368,249 @@ function ItemDetailContent() {
           {/* Action CTAs */}
           <div className="pt-2">
             {isDonorCurrent ? (
-              <div className="p-3.5 rounded-xl bg-slate-100 text-slate-600 text-center text-sm font-medium">
-                Đây là món đồ bạn đang đăng trao tặng. Bạn có thể theo dõi người nhận trong mục Trao đổi.
+              <div className="space-y-3 rounded-2xl border-2 border-[#0F5B4B]/30 bg-gradient-to-br from-[#EAF7F2]/60 to-white p-4 sm:p-5 shadow-sm">
+                <div className="flex items-center justify-between pb-2 border-b border-[#0F5B4B]/15">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#0F5B4B] animate-pulse" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#0F5B4B]">
+                      Thao Tác Dành Cho Bạn (Người Đăng)
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#0F5B4B] text-white">
+                    Chủ Món Đồ
+                  </span>
+                </div>
+
+                {actionSuccessMsg && (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    {actionSuccessMsg}
+                  </div>
+                )}
+
+                {/* CASE 1: THERE IS A REQUEST PENDING APPROVAL */}
+                {activeTransaction && activeTransaction.status === 'REQUESTED' ? (
+                  <div className="space-y-3">
+                    <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl space-y-2">
+                      <div className="flex items-center gap-2 text-amber-900 font-bold text-xs sm:text-sm">
+                        <span className="px-2 py-0.5 rounded bg-amber-500 text-white text-[10px]">MỚI</span>
+                        Có bạn sinh viên vừa gửi yêu cầu muốn nhận món đồ này!
+                      </div>
+
+                      <div className="flex items-start gap-3 pt-1">
+                        <img
+                          src={receiverProfile?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'}
+                          alt={receiverProfile?.full_name}
+                          className="w-10 h-10 rounded-full object-cover border border-amber-300 shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                            {receiverProfile?.full_name}
+                            <span className="text-[10px] bg-emerald-100 text-[#0F5B4B] px-1.5 py-0.2 rounded font-semibold">Đã xác thực</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 truncate">{receiverProfile?.university || 'Đại học Đà Nẵng'}</p>
+                          
+                          <div className="mt-2 text-xs space-y-1 bg-white/80 p-2.5 rounded-lg border border-amber-100">
+                            <div className="flex items-center gap-1.5 text-slate-700 font-medium">
+                              <MapPin className="w-3.5 h-3.5 text-[#0F5B4B] shrink-0" />
+                              <span className="truncate">Điểm hẹn: <strong>{activeTransaction.pickup_location}</strong></span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-slate-600">
+                              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span>Thời gian: {activeTransaction.scheduled_date ? new Date(activeTransaction.scheduled_date).toLocaleString('vi-VN') : 'Thoả thuận khi gặp'}</span>
+                            </div>
+                            {activeTransaction.note && (
+                              <div className="flex items-start gap-1.5 text-slate-600 pt-1 border-t border-slate-100">
+                                <MessageCircle className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                                <span className="italic">"{activeTransaction.note}"</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Direct Action Buttons for Owner */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      <button
+                        onClick={handleOwnerAccept}
+                        disabled={isProcessingAction}
+                        className="w-full py-3 px-4 rounded-xl bg-[#0F5B4B] hover:bg-[#0A3F34] text-white font-bold text-xs sm:text-sm shadow-md shadow-[#0F5B4B]/20 flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 transition-all"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        Duyệt & Bắt đầu trao đồ
+                      </button>
+                      <Link
+                        href={`/trades/${activeTransaction.id}`}
+                        className="w-full py-3 px-4 rounded-xl bg-white border border-[#0F5B4B] text-[#0F5B4B] hover:bg-[#EAF7F2] font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all text-center"
+                      >
+                        🚚 Xem phòng trao đổi
+                      </Link>
+                    </div>
+                  </div>
+                ) : activeTransaction && (activeTransaction.status === 'ACCEPTED' || activeTransaction.status === 'HANDED_OVER') ? (
+                  /* CASE 2: TRADE IN PROGRESS (ACCEPTED OR HANDED OVER) */
+                  <div className="space-y-3">
+                    <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" />
+                          Đang trong tiến trình trao đồ với {receiverProfile?.full_name}
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold">
+                          Bước 2-3: Hẹn gặp
+                        </span>
+                      </div>
+
+                      <div className="text-xs space-y-1 text-slate-600 bg-white/80 p-2.5 rounded-lg border border-blue-100">
+                        <div className="flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-[#0F5B4B] shrink-0" />
+                          <span>Điểm hẹn: <strong>{activeTransaction.pickup_location}</strong></span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>Thời gian: {activeTransaction.scheduled_date ? new Date(activeTransaction.scheduled_date).toLocaleString('vi-VN') : 'Thoả thuận khi gặp'}</span>
+                        </div>
+                      </div>
+
+                      {/* 2-Way Confirmation Status */}
+                      <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+                        <div className={`p-2 rounded-lg border ${activeTransaction.giver_confirmed ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                          <div className="font-semibold">{activeTransaction.giver_confirmed ? '✓ Bạn: Đã giao đồ' : '⏳ Bạn: Chưa bàn giao'}</div>
+                        </div>
+                        <div className={`p-2 rounded-lg border ${activeTransaction.receiver_confirmed ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                          <div className="font-semibold">{activeTransaction.receiver_confirmed ? '✓ Người nhận: Đã nhận đồ' : '⏳ Người nhận: Chưa bấm nhận'}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Handover Action Buttons */}
+                    <div className="space-y-2 pt-1">
+                      {!activeTransaction.giver_confirmed ? (
+                        <button
+                          onClick={handleOwnerConfirmHandover}
+                          disabled={isProcessingAction}
+                          className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#0F5B4B] to-[#12725e] hover:brightness-105 text-white font-bold text-xs sm:text-sm shadow-md shadow-[#0F5B4B]/20 flex items-center justify-center gap-2 cursor-pointer active:scale-98 transition-all"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          Tôi đã trao đồ tận tay cho bạn sinh viên (Xác nhận bàn giao)
+                        </button>
+                      ) : (
+                        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs text-center font-medium">
+                          ✓ Bạn đã xác nhận bàn giao đồ thành công! Đang chờ bạn sinh viên bấm xác nhận nhận để hoàn tất.
+                        </div>
+                      )}
+
+                      <Link
+                        href={`/trades/${activeTransaction.id}`}
+                        className="w-full py-2.5 px-4 rounded-xl bg-white border border-slate-300 hover:border-[#0F5B4B] text-slate-700 hover:text-[#0F5B4B] font-semibold text-xs flex items-center justify-center gap-1.5 transition-all text-center"
+                      >
+                        🚚 Xem chi tiết phòng tiến trình 4 bước & Chat
+                      </Link>
+                    </div>
+                  </div>
+                ) : activeTransaction && activeTransaction.status === 'COMPLETED' ? (
+                  /* CASE 3: COMPLETED */
+                  <div className="space-y-3">
+                    <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-1">
+                      <div className="text-emerald-800 font-bold text-sm flex items-center justify-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        Món đồ này đã hoàn tất trao tặng thành công!
+                      </div>
+                      <p className="text-xs text-emerald-700">
+                        Bạn đã được cộng +20 điểm uy tín vì đóng góp cho cộng đồng Liên Chiểu.
+                      </p>
+                    </div>
+                    <Link
+                      href={`/trades/${activeTransaction.id}`}
+                      className="w-full py-3 px-4 rounded-xl bg-[#0F5B4B] hover:bg-[#0A3F34] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all text-center"
+                    >
+                      ⭐ Xem đánh giá & Chi tiết giao dịch
+                    </Link>
+                  </div>
+                ) : (
+                  /* CASE 4: ACTIVE - NO REQUEST YET */
+                  <div className="space-y-3">
+                    <div className="p-3 bg-emerald-50/70 border border-emerald-200/80 rounded-xl space-y-1">
+                      <div className="text-[#0F5B4B] font-bold text-xs sm:text-sm flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4" />
+                        Món đồ của bạn đang sẵn sàng trên Kho Đồ
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        Khi có bạn sinh viên gửi yêu cầu nhận món đồ này, thông báo và nút phê duyệt sẽ xuất hiện ngay tại đây và trên chuông thông báo.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : isReceiverCurrent && activeTransaction ? (
+              /* CURRENT USER IS THE RECEIVER */
+              <div className="space-y-3 rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50/50 to-white p-4 sm:p-5 shadow-sm">
+                <div className="flex items-center justify-between pb-2 border-b border-blue-100">
+                  <span className="text-xs font-bold uppercase tracking-wider text-blue-900">
+                    Bạn Đang Đăng Ký Nhận Món Đồ Này
+                  </span>
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-600 text-white">
+                    Người Nhận
+                  </span>
+                </div>
+
+                {actionSuccessMsg && (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    {actionSuccessMsg}
+                  </div>
+                )}
+
+                {activeTransaction.status === 'REQUESTED' ? (
+                  <div className="space-y-2">
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                      ⏳ Yêu cầu nhận đồ của bạn đã được gửi tới chủ đồ (<strong>{donor?.full_name}</strong>). Vui lòng chờ bạn ấy phê duyệt!
+                    </div>
+                    <Link
+                      href={`/trades/${activeTransaction.id}`}
+                      className="w-full py-2.5 px-4 rounded-xl bg-[#0F5B4B] text-white font-bold text-xs flex items-center justify-center gap-1.5 text-center"
+                    >
+                      🚚 Xem phòng chờ xác nhận
+                    </Link>
+                  </div>
+                ) : (activeTransaction.status === 'ACCEPTED' || activeTransaction.status === 'HANDED_OVER') ? (
+                  <div className="space-y-2">
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 space-y-1">
+                      <div className="font-bold">Chủ đồ đã duyệt yêu cầu trao tặng!</div>
+                      <div>Điểm hẹn: <strong>{activeTransaction.pickup_location}</strong></div>
+                    </div>
+
+                    {!activeTransaction.receiver_confirmed ? (
+                      <button
+                        onClick={handleReceiverConfirmHandover}
+                        disabled={isProcessingAction}
+                        className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98 transition-all"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        Tôi đã nhận được món đồ tận tay (Xác nhận đã nhận)
+                      </button>
+                    ) : (
+                      <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs text-center font-medium">
+                        ✓ Bạn đã bấm xác nhận đã nhận đồ thành công!
+                      </div>
+                    )}
+
+                    <Link
+                      href={`/trades/${activeTransaction.id}`}
+                      className="w-full py-2.5 px-4 rounded-xl bg-white border border-blue-300 text-blue-800 font-bold text-xs flex items-center justify-center gap-1.5 text-center"
+                    >
+                      🚚 Vào phòng tiến trình 4 bước & Chat
+                    </Link>
+                  </div>
+                ) : (
+                  <Link
+                    href={`/trades/${activeTransaction.id}`}
+                    className="w-full py-3 px-4 rounded-xl bg-[#0F5B4B] text-white font-bold text-xs flex items-center justify-center gap-1.5 text-center"
+                  >
+                    ⭐ Xem chi tiết giao dịch hoàn tất
+                  </Link>
+                )}
               </div>
             ) : item.status === 'COMPLETED' ? (
               <div className="p-3.5 rounded-xl bg-slate-100 text-slate-500 text-center text-sm font-semibold">

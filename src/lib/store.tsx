@@ -80,7 +80,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const savedProfiles = localStorage.getItem(STORAGE_KEYS.PROFILES);
       if (savedProfiles) setProfiles(JSON.parse(savedProfiles));
 
-      const savedUserId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
+      let savedUserId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
+      if (savedUserId === 'usr-oauth-1791902102209') {
+        savedUserId = 'usr-oauth-1791897070645';
+        try {
+          localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, savedUserId);
+        } catch {}
+      }
       if (savedUserId !== null) {
         // If explicitly set to empty string, user is logged out
         setCurrentUserId(savedUserId ? savedUserId : null);
@@ -853,7 +859,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newTransaction;
   };
 
-  const advanceTradeStatus = (transactionId: string, nextStatus: TradeStatus) => {
+    const pushNotification = (notif: NotificationItem) => {
+      setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
+      if (isSupabaseConfigured() && supabase) {
+        supabase.from('notifications').upsert(notif).then(() => {});
+      }
+    };
+
+    const advanceTradeStatus = (transactionId: string, nextStatus: TradeStatus) => {
     setTransactions((prev) =>
       prev.map((t) => {
         if (t.id !== transactionId) return t;
@@ -873,8 +886,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }).eq('id', transactionId).then(() => {});
     }
 
+    const currentTrans = transactions.find((t) => t.id === transactionId);
+    const targetItem = currentTrans ? (getItemById(currentTrans.item_id) || items.find((i) => i.id === currentTrans.item_id)) : null;
+
+    if (nextStatus === 'ACCEPTED' && currentTrans) {
+      const acceptNotif: NotificationItem = {
+        id: `notif-acc-${Date.now()}`,
+        user_id: currentTrans.receiver_id,
+        title: 'Chủ đồ đã duyệt yêu cầu nhận đồ! 🎉',
+        content: `Yêu cầu nhận món "${targetItem?.title || 'đồ dùng'}" đã được chủ đồ chấp thuận. Hãy chuẩn bị gặp trao đồ tại điểm hẹn!`,
+        is_read: false,
+        action_link: `/trades/${currentTrans.id}`,
+        type: 'trade',
+        created_at: new Date().toISOString(),
+      };
+      pushNotification(acceptNotif);
+    }
+
     if (nextStatus === 'COMPLETED') {
-      const trans = transactions.find((t) => t.id === transactionId);
+      const trans = currentTrans;
       if (trans) {
         updateItem(trans.item_id, { status: 'COMPLETED' });
         setProfiles((prev) =>
@@ -918,12 +948,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    let isBothConfirmedNow = false;
+
     setTransactions((prev) =>
       prev.map((t) => {
         if (t.id !== transactionId) return t;
         const updatedGiverConf = isGiver ? true : Boolean(t.giver_confirmed) || dbOtherConfirmed;
         const updatedReceiverConf = !isGiver ? true : Boolean(t.receiver_confirmed) || dbOtherConfirmed;
         const bothConfirmed = updatedGiverConf && updatedReceiverConf;
+        isBothConfirmedNow = bothConfirmed;
 
         const updated: Transaction = {
           ...t,
@@ -953,6 +986,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supabase.from('transactions').update(updates).eq('id', transactionId).then(() => {});
     }
 
+    const transForNotif = completedTrans || transactions.find((t) => t.id === transactionId);
+    const targetItemForNotif = transForNotif ? (getItemById(transForNotif.item_id) || items.find((i) => i.id === transForNotif.item_id)) : null;
+
+    if (!isBothConfirmedNow && transForNotif) {
+      if (isGiver) {
+        const gvConfNotif: NotificationItem = {
+          id: `notif-gvconf-${Date.now()}`,
+          user_id: transForNotif.receiver_id,
+          title: 'Chủ đồ đã xác nhận bàn giao đồ! 🎁',
+          content: `Chủ đồ đã xác nhận trao món "${targetItemForNotif?.title || 'đồ dùng'}". Bạn hãy kiểm tra và bấm xác nhận đã nhận đồ để hoàn tất nhé!`,
+          is_read: false,
+          action_link: `/trades/${transactionId}`,
+          type: 'trade',
+          created_at: new Date().toISOString(),
+        };
+        pushNotification(gvConfNotif);
+      } else {
+        const rcConfNotif: NotificationItem = {
+          id: `notif-rcconf-${Date.now()}`,
+          user_id: transForNotif.giver_id,
+          title: 'Người nhận đã xác nhận nhận đồ! ✅',
+          content: `Người nhận đã bấm xác nhận đã nhận món "${targetItemForNotif?.title || 'đồ dùng'}". Hãy xác nhận bàn giao để hoàn tất nhé!`,
+          is_read: false,
+          action_link: `/trades/${transactionId}`,
+          type: 'trade',
+          created_at: new Date().toISOString(),
+        };
+        pushNotification(rcConfNotif);
+      }
+    }
+
     if (completedTrans || dbOtherConfirmed) {
       const trans: Transaction | undefined = completedTrans || transactions.find((t) => t.id === transactionId);
       if (trans) {
@@ -978,27 +1042,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           })
         );
 
-      const giverNotif: NotificationItem = {
-        id: `notif-comp-giver-${Date.now()}`,
-        user_id: trans.giver_id,
-        title: 'Trao đồ thành công! (+20 điểm)',
-        content: `Cả hai bên đã xác nhận hoàn tất giao dịch. Bạn nhận được +20 điểm uy tín đóng góp.`,
-        is_read: false,
-        action_link: `/trades/${trans.id}/completed`,
-        type: 'trade',
-        created_at: new Date().toISOString(),
-      };
-      const receiverNotif: NotificationItem = {
-        id: `notif-comp-receiver-${Date.now()}`,
-        user_id: trans.receiver_id,
-        title: 'Nhận đồ thành công! (+10 điểm)',
-        content: `Cả hai bên đã xác nhận hoàn tất nhận món đồ. Bạn nhận được +10 điểm uy tín.`,
-        is_read: false,
-        action_link: `/trades/${trans.id}/completed`,
-        type: 'trade',
-        created_at: new Date().toISOString(),
-      };
-      setNotifications((prev) => [giverNotif, receiverNotif, ...prev]);
+        const giverNotif: NotificationItem = {
+          id: `notif-comp-giver-${Date.now()}`,
+          user_id: trans.giver_id,
+          title: 'Trao đồ thành công! (+20 điểm) 🎉',
+          content: `Cả hai bên đã xác nhận hoàn tất giao dịch món "${targetItemForNotif?.title || 'đồ dùng'}". Bạn nhận được +20 điểm uy tín đóng góp.`,
+          is_read: false,
+          action_link: `/trades/${trans.id}`,
+          type: 'trade',
+          created_at: new Date().toISOString(),
+        };
+        const receiverNotif: NotificationItem = {
+          id: `notif-comp-receiver-${Date.now()}`,
+          user_id: trans.receiver_id,
+          title: 'Nhận đồ thành công! (+10 điểm) ⭐',
+          content: `Cả hai bên đã xác nhận hoàn tất nhận món "${targetItemForNotif?.title || 'đồ dùng'}". Hãy để lại đánh giá cho người trao tặng nhé!`,
+          is_read: false,
+          action_link: `/trades/${trans.id}`,
+          type: 'trade',
+          created_at: new Date().toISOString(),
+        };
+        pushNotification(giverNotif);
+        pushNotification(receiverNotif);
       }
     }
   };

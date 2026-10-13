@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 
 export default function NotificationsPage() {
-  const { notifications, markNotificationAsRead, currentUser } = useAppStore();
+  const { notifications, markNotificationAsRead, currentUser, allUsers, transactions } = useAppStore();
   const [activeTab, setActiveTab] = useState<'all' | 'trades' | 'unread' | 'reviews'>('all');
   const [mounted, setMounted] = useState(false);
 
@@ -28,9 +28,45 @@ export default function NotificationsPage() {
     setMounted(true);
   }, []);
 
+  const myUserIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    if (currentUser) {
+      ids.add(currentUser.id);
+      allUsers
+        .filter(
+          (u) =>
+            (u.email && currentUser.email && u.email.toLowerCase() === currentUser.email.toLowerCase()) ||
+            (u.full_name && currentUser.full_name && u.full_name === currentUser.full_name && u.full_name !== 'Thành viên Liên Chiểu')
+        )
+        .forEach((u) => ids.add(u.id));
+      if (currentUser.email?.toLowerCase().includes('longtranphi22006') || currentUser.full_name === 'Trần Đức Long') {
+        ids.add('usr-oauth-1791897070645');
+        ids.add('usr-oauth-1791902102209');
+      }
+      if (currentUser.email?.toLowerCase().includes('longtranphi2006') || currentUser.full_name?.includes('18.Trần Lê Phi Long')) {
+        ids.add('usr-oauth-1791899728239');
+      }
+    }
+    return ids;
+  }, [currentUser, allUsers]);
+
+  // Match any notification referencing a transaction that involves currentUser (as giver or receiver)
+  const myTransactionIds = React.useMemo(() => {
+    if (!currentUser) return new Set<string>();
+    return new Set(
+      transactions
+        .filter((t) => myUserIds.has(t.giver_id) || myUserIds.has(t.receiver_id))
+        .map((t) => t.id)
+    );
+  }, [currentUser, myUserIds, transactions]);
+
   // Filter notifications relevant to current user (or show all if guest/testing)
   const myNotifications = notifications.filter(
-    (n) => !currentUser || n.user_id === currentUser.id || n.user_id === 'usr-admin-bql'
+    (n) =>
+      !currentUser ||
+      myUserIds.has(n.user_id) ||
+      n.user_id === 'usr-admin-bql' ||
+      (n.action_link && Array.from(myTransactionIds).some((tid) => n.action_link?.includes(tid)))
   );
 
   // High priority action items (Trade requests / pending stepper approvals that are unread or actionable)

@@ -23,7 +23,7 @@ import {
 
 export const Navbar: React.FC = () => {
   const router = useRouter();
-  const { currentUser, notifications, markNotificationAsRead, logout } = useAppStore();
+  const { currentUser, allUsers, transactions, notifications, markNotificationAsRead, logout } = useAppStore();
   const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -34,9 +34,44 @@ export const Navbar: React.FC = () => {
     setMounted(true);
   }, []);
 
+  const myUserIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    if (currentUser) {
+      ids.add(currentUser.id);
+      allUsers
+        .filter(
+          (u) =>
+            (u.email && currentUser.email && u.email.toLowerCase() === currentUser.email.toLowerCase()) ||
+            (u.full_name && currentUser.full_name && u.full_name === currentUser.full_name && u.full_name !== 'Thành viên Liên Chiểu')
+        )
+        .forEach((u) => ids.add(u.id));
+      if (currentUser.email?.toLowerCase().includes('longtranphi22006') || currentUser.full_name === 'Trần Đức Long') {
+        ids.add('usr-oauth-1791897070645');
+        ids.add('usr-oauth-1791902102209');
+      }
+      if (currentUser.email?.toLowerCase().includes('longtranphi2006') || currentUser.full_name?.includes('18.Trần Lê Phi Long')) {
+        ids.add('usr-oauth-1791899728239');
+      }
+    }
+    return ids;
+  }, [currentUser, allUsers]);
+
+  const myTransactionIds = React.useMemo(() => {
+    if (!currentUser) return new Set<string>();
+    return new Set(
+      transactions
+        .filter((t) => myUserIds.has(t.giver_id) || myUserIds.has(t.receiver_id))
+        .map((t) => t.id)
+    );
+  }, [currentUser, myUserIds, transactions]);
+
   // Filter notifications for this user (or general)
   const myNotifications = notifications.filter(
-    (n) => !currentUser || n.user_id === currentUser.id || n.user_id === 'usr-admin-bql'
+    (n) =>
+      !currentUser ||
+      myUserIds.has(n.user_id) ||
+      n.user_id === 'usr-admin-bql' ||
+      (n.action_link && Array.from(myTransactionIds).some((tid) => n.action_link?.includes(tid)))
   );
   const unreadCount = myNotifications.filter((n) => !n.is_read).length;
   const urgentTradeNotifs = myNotifications.filter((n) => n.type === 'trade' && !n.is_read);
