@@ -203,26 +203,31 @@ function TradeStepperContent() {
     }
   }, [bothConfirmed, status, transaction?.id, advanceTradeStatus]);
 
-  // Parse chat messages from transaction.note
-  const chatMessages: TradeMessage[] = React.useMemo(() => {
-    if (!transaction?.note) return [];
+  // Parse chat messages and note from transaction.note
+  const { chatMessages, displayNote } = React.useMemo(() => {
+    if (!transaction?.note) return { chatMessages: [], displayNote: '' };
     try {
       const parsed = JSON.parse(transaction.note);
-      if (Array.isArray(parsed.messages)) {
-        return parsed.messages;
+      if (typeof parsed === 'object' && parsed !== null) {
+        const msgs = Array.isArray(parsed.messages) ? parsed.messages : [];
+        const initialNote = parsed.initialNote ? String(parsed.initialNote).trim() : '';
+        return { chatMessages: msgs, displayNote: initialNote };
       }
     } catch {}
     // If note is plain text, render it as initial message from receiver
-    return [
-      {
-        id: 'msg-initial',
-        sender_id: transaction.receiver_id,
-        sender_name: receiver?.full_name || 'Người nhận',
-        sender_avatar: receiver?.avatar_url,
-        content: transaction.note,
-        created_at: transaction.created_at,
-      },
-    ];
+    return {
+      chatMessages: [
+        {
+          id: 'msg-initial',
+          sender_id: transaction.receiver_id,
+          sender_name: receiver?.full_name || 'Người nhận',
+          sender_avatar: receiver?.avatar_url,
+          content: transaction.note,
+          created_at: transaction.created_at,
+        },
+      ],
+      displayNote: transaction.note.trim(),
+    };
   }, [transaction?.note, transaction?.receiver_id, transaction?.created_at, receiver]);
 
   const handleAdvance = (nextStatus: TradeStatus) => {
@@ -605,12 +610,12 @@ function TradeStepperContent() {
           </div>
         </div>
 
-        {transaction.note && (
+        {displayNote && (
           <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-100 text-xs text-emerald-950 flex items-start gap-2">
             <MessageSquare className="w-4 h-4 text-[#0F5B4B] shrink-0 mt-0.5" />
             <div>
               <span className="font-semibold">Ghi chú hẹn: </span>
-              <span>{transaction.note}</span>
+              <span>{displayNote}</span>
             </div>
           </div>
         )}

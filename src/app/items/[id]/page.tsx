@@ -419,12 +419,23 @@ function ItemDetailContent() {
                               <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                               <span>Thời gian: {activeTransaction.scheduled_date ? new Date(activeTransaction.scheduled_date).toLocaleString('vi-VN') : 'Thoả thuận khi gặp'}</span>
                             </div>
-                            {activeTransaction.note && (
-                              <div className="flex items-start gap-1.5 text-slate-600 pt-1 border-t border-slate-100">
-                                <MessageCircle className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                                <span className="italic">"{activeTransaction.note}"</span>
-                              </div>
-                            )}
+                            {(() => {
+                              if (!activeTransaction.note) return null;
+                              let noteText = activeTransaction.note;
+                              try {
+                                const parsed = JSON.parse(activeTransaction.note);
+                                if (parsed && typeof parsed === 'object') {
+                                  noteText = parsed.initialNote || '';
+                                }
+                              } catch {}
+                              if (!noteText.trim()) return null;
+                              return (
+                                <div className="flex items-start gap-1.5 text-slate-600 pt-1 border-t border-slate-100">
+                                  <MessageCircle className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                                  <span className="italic">"{noteText}"</span>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
