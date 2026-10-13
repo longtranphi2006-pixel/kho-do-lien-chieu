@@ -6,9 +6,18 @@ import { MOCK_PROFILES, MOCK_ITEMS, MOCK_TRANSACTIONS, MOCK_REVIEWS, MOCK_NOTIFI
 import { isSupabaseConfigured } from '@/lib/supabase';
 
 interface AppContextType {
-  currentUser: Profile;
+  currentUser: Profile | null;
   allUsers: Profile[];
   switchUser: (userId: string) => void;
+  login: (identifier: string) => boolean;
+  logout: () => void;
+  registerUser: (userData: {
+    full_name: string;
+    identifier: string;
+    university: string;
+    department?: string;
+    student_id?: string;
+  }) => Profile;
   items: Item[];
   getItemById: (id: string) => Item | undefined;
   addItem: (newItem: Omit<Item, 'id' | 'created_at' | 'favorites_count'>) => Item;
@@ -37,25 +46,24 @@ interface AppContextType {
   favorites: string[];
   toggleFavorite: (itemId: string) => void;
   isSupabaseMode: boolean;
-  activeRole: 'user' | 'admin';
-  toggleRole: () => void;
+  activeRole: 'user' | 'admin' | 'guest';
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const STORAGE_KEYS = {
-  CURRENT_USER_ID: 'kdlc_current_user_id',
-  ITEMS: 'kdlc_items_v2',
-  TRANSACTIONS: 'kdlc_transactions_v2',
-  REVIEWS: 'kdlc_reviews_v2',
-  NOTIFICATIONS: 'kdlc_notifications_v2',
-  FAVORITES: 'kdlc_favorites_v2',
-  PROFILES: 'kdlc_profiles_v2',
+  CURRENT_USER_ID: 'kdlc_current_user_id_v3',
+  ITEMS: 'kdlc_items_v3',
+  TRANSACTIONS: 'kdlc_transactions_v3',
+  REVIEWS: 'kdlc_reviews_v3',
+  NOTIFICATIONS: 'kdlc_notifications_v3',
+  FAVORITES: 'kdlc_favorites_v3',
+  PROFILES: 'kdlc_profiles_v3',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [profiles, setProfiles] = useState<Profile[]>(MOCK_PROFILES);
-  const [currentUserId, setCurrentUserId] = useState<string>('usr-an-bachkhoa');
+  const [currentUserId, setCurrentUserId] = useState<string | null>('usr-an-bachkhoa');
   const [items, setItems] = useState<Item[]>(MOCK_ITEMS);
   const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
   const [reviews, setReviews] = useState<Review[]>(MOCK_REVIEWS);
@@ -70,7 +78,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (savedProfiles) setProfiles(JSON.parse(savedProfiles));
 
       const savedUserId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
-      if (savedUserId) setCurrentUserId(savedUserId);
+      if (savedUserId !== null) {
+        // If explicitly set to empty string, user is logged out
+        setCurrentUserId(savedUserId ? savedUserId : null);
+      }
 
       const savedItems = localStorage.getItem(STORAGE_KEYS.ITEMS);
       if (savedItems) setItems(JSON.parse(savedItems));
@@ -98,7 +109,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isInitialized) return;
     try {
       localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, currentUserId);
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, currentUserId || '');
       localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(items));
       localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
       localStorage.setItem(STORAGE_KEYS.REVIEWS, JSON.stringify(reviews));
@@ -109,7 +120,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [profiles, currentUserId, items, transactions, reviews, notifications, favorites, isInitialized]);
 
-  const currentUser = profiles.find((p) => p.id === currentUserId) || profiles[0];
+  const currentUser = currentUserId ? profiles.find((p) => p.id === currentUserId) || null : null;
 
   const switchUser = (userId: string) => {
     const user = profiles.find((p) => p.id === userId);
@@ -118,12 +129,79 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const toggleRole = () => {
-    if (currentUser.role === 'admin') {
-      switchUser('usr-an-bachkhoa');
-    } else {
-      switchUser('usr-admin-lienchieu');
+  const login = (identifier: string): boolean => {
+    const clean = identifier.trim().toLowerCase();
+    const matched = profiles.find(
+      (p) =>
+        (p.email && p.email.toLowerCase() === clean) ||
+        (p.phone && p.phone.replace(/\s+/g, '') === clean.replace(/\s+/g, '')) ||
+        p.full_name.toLowerCase().includes(clean)
+    );
+
+    if (matched) {
+      setCurrentUserId(matched.id);
+      return true;
     }
+
+    // If identifier doesn't match an existing user, create a new verified profile for them
+    const newProfile: Profile = {
+      id: `usr-${Date.now()}`,
+      full_name: clean.includes('@') ? clean.split('@')[0] : 'Thành viên mới',
+      avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+      email: clean.includes('@') ? clean : undefined,
+      phone: !clean.includes('@') ? clean : undefined,
+      university: 'Trường Đại học Bách khoa - ĐHĐN',
+      department: 'Sinh viên Liên Chiểu',
+      is_verified: true,
+      reputation_score: 100,
+      items_given_count: 0,
+      completed_trades_count: 0,
+      role: clean.includes('admin') ? 'admin' : 'user',
+      created_at: new Date().toISOString(),
+    };
+
+    setProfiles((prev) => [...prev, newProfile]);
+    setCurrentUserId(newProfile.id);
+    return true;
+  };
+
+  const logout = () => {
+    setCurrentUserId(null);
+    try {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, '');
+    } catch {
+      // ignore
+    }
+  };
+
+  const registerUser = (userData: {
+    full_name: string;
+    identifier: string;
+    university: string;
+    department?: string;
+    student_id?: string;
+  }): Profile => {
+    const isEmail = userData.identifier.includes('@');
+    const newProfile: Profile = {
+      id: `usr-${Date.now()}`,
+      full_name: userData.full_name,
+      avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+      email: isEmail ? userData.identifier : undefined,
+      phone: !isEmail ? userData.identifier : undefined,
+      university: userData.university,
+      department: userData.department,
+      student_id: userData.student_id,
+      is_verified: true,
+      reputation_score: 100,
+      items_given_count: 0,
+      completed_trades_count: 0,
+      role: 'user',
+      created_at: new Date().toISOString(),
+    };
+
+    setProfiles((prev) => [...prev, newProfile]);
+    setCurrentUserId(newProfile.id);
+    return newProfile;
   };
 
   const getItemById = (id: string): Item | undefined => {
@@ -142,7 +220,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setItems((prev) => [newItem, ...prev]);
 
-    // If item was placed into review queue, create notification for admin
     if (newItem.status === 'PENDING_ADMIN') {
       const adminNotif: NotificationItem = {
         id: `notif-${Date.now()}`,
@@ -206,11 +283,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetItem = items.find((i) => i.id === params.itemId);
     if (!targetItem) throw new Error('Item not found');
 
+    const receiverId = currentUser?.id || 'usr-an-bachkhoa';
+    const receiverName = currentUser?.full_name || 'Một bạn sinh viên';
+
     const newTransaction: Transaction = {
       id: `tr-${Date.now()}`,
       item_id: params.itemId,
       giver_id: targetItem.user_id,
-      receiver_id: currentUser.id,
+      receiver_id: receiverId,
       status: 'REQUESTED',
       pickup_location: params.pickupLocation,
       note: params.note || 'Hẹn gặp tại điểm trao đổi đã thống nhất.',
@@ -219,16 +299,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setTransactions((prev) => [newTransaction, ...prev]);
-
-    // Mark item status as in progress
     updateItem(params.itemId, { status: 'IN_PROGRESS' });
 
-    // Send notification to donor
     const donorNotif: NotificationItem = {
       id: `notif-${Date.now()}`,
       user_id: targetItem.user_id,
       title: 'Đề nghị nhận đồ mới!',
-      content: `${currentUser.full_name} muốn nhận món "${targetItem.title}".`,
+      content: `${receiverName} muốn nhận món "${targetItem.title}".`,
       is_read: false,
       action_link: `/trades/${newTransaction.id}`,
       type: 'trade',
@@ -252,12 +329,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    // If completed, update item status and bump counts
     if (nextStatus === 'COMPLETED') {
       const trans = transactions.find((t) => t.id === transactionId);
       if (trans) {
         updateItem(trans.item_id, { status: 'COMPLETED' });
-        // Award points to giver and receiver
         setProfiles((prev) =>
           prev.map((p) => {
             if (p.id === trans.giver_id) {
@@ -288,10 +363,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     rating: number;
     comment: string;
   }) => {
+    const reviewerId = currentUser?.id || 'usr-an-bachkhoa';
+    const reviewerName = currentUser?.full_name || 'Bạn cùng trao đổi';
+
     const newReview: Review = {
       id: `rev-${Date.now()}`,
       transaction_id: params.transactionId,
-      reviewer_id: currentUser.id,
+      reviewer_id: reviewerId,
       reviewee_id: params.revieweeId,
       rating: params.rating,
       comment: params.comment,
@@ -300,12 +378,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setReviews((prev) => [newReview, ...prev]);
 
-    // Send thank you notification to reviewee
     const notif: NotificationItem = {
       id: `notif-${Date.now()}`,
       user_id: params.revieweeId,
       title: 'Đánh giá mới từ bạn cùng trao đổi ⭐',
-      content: `${currentUser.full_name} đã gửi đánh giá ${params.rating} sao: "${params.comment}"`,
+      content: `${reviewerName} đã gửi đánh giá ${params.rating} sao: "${params.comment}"`,
       is_read: false,
       action_link: '/profile',
       type: 'review',
@@ -324,7 +401,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setFavorites((prev) => {
       const exists = prev.includes(itemId);
       const updated = exists ? prev.filter((id) => id !== itemId) : [...prev, itemId];
-      // update count
       setItems((prevItems) =>
         prevItems.map((item) =>
           item.id === itemId
@@ -342,6 +418,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentUser,
         allUsers: profiles,
         switchUser,
+        login,
+        logout,
+        registerUser,
         items,
         getItemById,
         addItem,
@@ -360,8 +439,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favorites,
         toggleFavorite,
         isSupabaseMode: isSupabaseConfigured(),
-        activeRole: currentUser.role,
-        toggleRole,
+        activeRole: currentUser ? currentUser.role : 'guest',
       }}
     >
       {children}

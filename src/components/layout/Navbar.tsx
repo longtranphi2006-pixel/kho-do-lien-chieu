@@ -18,7 +18,7 @@ import {
 
 export const Navbar: React.FC = () => {
   const router = useRouter();
-  const { currentUser, notifications } = useAppStore();
+  const { currentUser, notifications, logout } = useAppStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -131,82 +131,96 @@ export const Navbar: React.FC = () => {
                 <span>+ Đăng đồ</span>
               </Link>
 
-              {/* User Avatar & Dropdown */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  className="flex items-center gap-2 p-1 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
-                >
-                  {currentUser.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={currentUser.avatar_url}
-                      alt={currentUser.full_name}
-                      className="w-8 h-8 rounded-full object-cover border border-[#0F5B4B]/40"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-[#EAF7F2] text-[#0F5B4B] font-bold text-xs flex items-center justify-center">
-                      {currentUser.full_name.charAt(0)}
+              {/* User Avatar & Dropdown / Login button */}
+              {currentUser ? (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowProfileMenu(!showProfileMenu)}
+                    className="flex items-center gap-2 p-1 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+                  >
+                    {currentUser.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={currentUser.avatar_url}
+                        alt={currentUser.full_name}
+                        className="w-8 h-8 rounded-full object-cover border border-[#0F5B4B]/40"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-[#EAF7F2] text-[#0F5B4B] font-bold text-xs flex items-center justify-center">
+                        {currentUser.full_name.charAt(0)}
+                      </div>
+                    )}
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-500 hidden sm:block" />
+                  </button>
+
+                  {/* Dropdown Menu */}
+                  {showProfileMenu && (
+                    <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white shadow-xl border border-slate-100 py-2 z-50 animate-fade-in text-sm">
+                      <div className="px-4 py-2 border-b border-slate-100">
+                        <div className="font-semibold text-slate-900 truncate">
+                          {currentUser.full_name}
+                        </div>
+                        <div className="text-xs text-slate-500 truncate">
+                          {currentUser.university}
+                        </div>
+                        <div className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-[#0F5B4B] bg-[#EAF7F2] px-2 py-0.5 rounded-full">
+                          ⭐ {currentUser.reputation_score} điểm đóng góp
+                        </div>
+                      </div>
+
+                      <Link
+                        href="/profile"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-[#EAF7F2] hover:text-[#0F5B4B]"
+                      >
+                        <User className="w-4 h-4" />
+                        Hồ sơ cá nhân
+                      </Link>
+
+                      <Link
+                        href="/items"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-[#EAF7F2] hover:text-[#0F5B4B]"
+                      >
+                        <Layers className="w-4 h-4" />
+                        Kho đồ cộng đồng
+                      </Link>
+
+                      {currentUser.role === 'admin' && (
+                        <Link
+                          href="/admin"
+                          onClick={() => setShowProfileMenu(false)}
+                          className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-[#EAF7F2] hover:text-[#0F5B4B]"
+                        >
+                          <Shield className="w-4 h-4" />
+                          Bảng quản trị BQL
+                        </Link>
+                      )}
+
+                      <div className="border-t border-slate-100 mt-1 pt-1">
+                        <button
+                          onClick={() => {
+                            setShowProfileMenu(false);
+                            logout();
+                            router.push('/auth');
+                          }}
+                          className="w-full text-left flex items-center gap-2.5 px-4 py-2 text-rose-600 hover:bg-rose-50 cursor-pointer"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          Đăng xuất tài khoản
+                        </button>
+                      </div>
                     </div>
                   )}
-                  <ChevronDown className="w-3.5 h-3.5 text-slate-500 hidden sm:block" />
-                </button>
-
-                {/* Dropdown Menu */}
-                {showProfileMenu && (
-                  <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white shadow-xl border border-slate-100 py-2 z-50 animate-fade-in text-sm">
-                    <div className="px-4 py-2 border-b border-slate-100">
-                      <div className="font-semibold text-slate-900 truncate">
-                        {currentUser.full_name}
-                      </div>
-                      <div className="text-xs text-slate-500 truncate">
-                        {currentUser.university}
-                      </div>
-                      <div className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-[#0F5B4B] bg-[#EAF7F2] px-2 py-0.5 rounded-full">
-                        ⭐ {currentUser.reputation_score} điểm đóng góp
-                      </div>
-                    </div>
-
-                    <Link
-                      href="/profile"
-                      onClick={() => setShowProfileMenu(false)}
-                      className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-[#EAF7F2] hover:text-[#0F5B4B]"
-                    >
-                      <User className="w-4 h-4" />
-                      Hồ sơ cá nhân
-                    </Link>
-
-                    <Link
-                      href="/items"
-                      onClick={() => setShowProfileMenu(false)}
-                      className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-[#EAF7F2] hover:text-[#0F5B4B]"
-                    >
-                      <Layers className="w-4 h-4" />
-                      Kho đồ cộng đồng
-                    </Link>
-
-                    <Link
-                      href="/admin"
-                      onClick={() => setShowProfileMenu(false)}
-                      className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-[#EAF7F2] hover:text-[#0F5B4B]"
-                    >
-                      <Shield className="w-4 h-4" />
-                      Bảng quản trị BQL
-                    </Link>
-
-                    <div className="border-t border-slate-100 mt-1 pt-1">
-                      <Link
-                        href="/auth"
-                        onClick={() => setShowProfileMenu(false)}
-                        className="flex items-center gap-2.5 px-4 py-2 text-rose-600 hover:bg-rose-50"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        Đăng nhập / Đổi tài khoản
-                      </Link>
-                    </div>
-                  </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <Link
+                  href="/auth"
+                  className="px-4 py-2 rounded-full bg-[#0F5B4B] text-white text-xs sm:text-sm font-semibold hover:bg-[#0A3F34] shadow-sm transition-all"
+                >
+                  Đăng nhập
+                </Link>
+              )}
             </div>
           </div>
         </div>

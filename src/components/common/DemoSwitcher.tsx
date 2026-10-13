@@ -18,7 +18,7 @@ export const DemoSwitcher: React.FC = () => {
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
           <span className="hidden sm:inline">Chế độ Thử nghiệm:</span>
           <span className="bg-[#EAF7F2] px-2 py-0.5 rounded-md border border-[#A7E2CB] font-bold">
-            {currentUser.role === 'admin' ? '🛡️ Admin' : '🎓 Sinh viên'} ({currentUser.full_name.split(' ').slice(-1)[0]})
+            {currentUser ? (currentUser.role === 'admin' ? '🛡️ Admin' : '🎓 Sinh viên') : 'Chưa đăng nhập'} {currentUser ? `(${currentUser.full_name.split(' ').slice(-1)[0]})` : ''}
           </span>
           {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
         </button>
@@ -35,7 +35,7 @@ export const DemoSwitcher: React.FC = () => {
                     setIsOpen(false);
                   }}
                   className={`w-full text-left px-2 py-1.5 rounded-lg flex items-center justify-between transition-colors ${
-                    currentUser.id === user.id
+                    currentUser?.id === user.id
                       ? 'bg-[#0F5B4B] text-white font-semibold'
                       : 'hover:bg-slate-100 text-slate-800'
                   }`}

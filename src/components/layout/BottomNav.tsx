@@ -8,7 +8,7 @@ import { Home, Layers, Plus, Bell, User } from 'lucide-react';
 
 export const BottomNav: React.FC = () => {
   const pathname = usePathname();
-  const { notifications } = useAppStore();
+  const { notifications, currentUser } = useAppStore();
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   const navItems = [
@@ -16,7 +16,7 @@ export const BottomNav: React.FC = () => {
     { label: 'Kho đồ', href: '/items', icon: Layers },
     {
       label: 'Đăng đồ',
-      href: '/items/new',
+      href: currentUser ? '/items/new' : '/auth',
       isCenterAction: true,
       icon: Plus,
     },
@@ -26,7 +26,11 @@ export const BottomNav: React.FC = () => {
       icon: Bell,
       badge: unreadCount,
     },
-    { label: 'Hồ sơ', href: '/profile', icon: User },
+    {
+      label: currentUser ? 'Hồ sơ' : 'Đăng nhập',
+      href: currentUser ? '/profile' : '/auth',
+      icon: User,
+    },
   ];
 
   return (

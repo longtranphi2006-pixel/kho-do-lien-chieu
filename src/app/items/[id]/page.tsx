@@ -53,7 +53,7 @@ function ItemDetailContent() {
 
   const isFavorited = favorites.includes(item.id);
   const donor = item.donor;
-  const isDonorCurrent = currentUser.id === item.user_id;
+  const isDonorCurrent = currentUser ? currentUser.id === item.user_id : false;
 
   const getConditionLabel = (c: string) => {
     switch (c) {
@@ -67,6 +67,10 @@ function ItemDetailContent() {
 
   const handleCreateRequest = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) {
+      router.push('/auth');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const trans = createTradeRequest({

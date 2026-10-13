@@ -45,14 +45,14 @@ function TradeCompletedContent() {
   }, []);
 
   const otherPerson =
-    transaction?.giver_id === currentUser.id ? transaction?.receiver : transaction?.giver;
+    transaction?.giver_id === currentUser?.id ? transaction?.receiver : transaction?.giver;
 
   const handleSubmitReview = (e: React.FormEvent) => {
     e.preventDefault();
     if (!transaction) return;
 
     const revieweeId =
-      transaction.giver_id === currentUser.id ? transaction.receiver_id : transaction.giver_id;
+      transaction.giver_id === currentUser?.id ? transaction.receiver_id : transaction.giver_id;
 
     submitReview({
       transactionId: transaction.id,

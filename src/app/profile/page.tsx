@@ -25,6 +25,28 @@ export default function ProfilePage() {
   const { currentUser, items, transactions, reviews } = useAppStore();
   const [activeTab, setActiveTab] = useState<'items' | 'trades' | 'reviews'>('items');
 
+  if (!currentUser) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center space-y-4">
+        <div className="w-16 h-16 rounded-full bg-[#EAF7F2] text-[#0F5B4B] flex items-center justify-center mx-auto">
+          <GraduationCap className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-800">
+          Chưa đăng nhập tài khoản
+        </h2>
+        <p className="text-slate-500 text-sm">
+          Vui lòng đăng nhập tài khoản sinh viên hoặc cư dân Liên Chiểu để xem hồ sơ và điểm uy tín.
+        </p>
+        <Link
+          href="/auth"
+          className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#0F5B4B] text-white font-bold text-sm hover:bg-[#0A3F34] shadow-md shadow-[#0F5B4B]/20"
+        >
+          Đăng nhập ngay
+        </Link>
+      </div>
+    );
+  }
+
   // Items posted by current user
   const userItems = items.filter((i) => i.user_id === currentUser.id);
 

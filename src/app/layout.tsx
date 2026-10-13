@@ -5,7 +5,6 @@ import { Suspense } from 'react';
 import { Navbar } from '@/components/layout/Navbar';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { Footer } from '@/components/layout/Footer';
-import { DemoSwitcher } from '@/components/common/DemoSwitcher';
 
 export const metadata: Metadata = {
   title: 'Kho Đồ Liên Chiểu | Mạng Lưới Chia Sẻ & Đổi Đồ Sinh Viên P2P Đà Nẵng',
@@ -36,9 +35,6 @@ export default function RootLayout({
           <Footer />
           <Suspense fallback={null}>
             <BottomNav />
-          </Suspense>
-          <Suspense fallback={null}>
-            <DemoSwitcher />
           </Suspense>
         </AppProvider>
       </body>

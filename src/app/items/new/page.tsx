@@ -92,7 +92,7 @@ export default function NewItemPage() {
 
       // Create item in store with the AI moderation status
       const created = addItem({
-        user_id: currentUser.id,
+        user_id: currentUser?.id || 'usr-an-bachkhoa',
         title,
         description,
         category,
@@ -119,7 +119,7 @@ export default function NewItemPage() {
       setIsScanning(false);
       // Fallback publish
       const created = addItem({
-        user_id: currentUser.id,
+        user_id: currentUser?.id || 'usr-an-bachkhoa',
         title,
         description,
         category,

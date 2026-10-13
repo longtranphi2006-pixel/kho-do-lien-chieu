@@ -75,14 +75,22 @@ export default function HomePage() {
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-[#0F5B4B] shrink-0" />
             <span className="font-medium">
-              Xin chào <strong className="font-bold">{currentUser.full_name}</strong> • Tài khoản của bạn được xác thực để bảo đảm an toàn và chỉ sử dụng cho mục đích của Kho Đồ Liên Chiểu.
+              {currentUser ? (
+                <>
+                  Xin chào <strong className="font-bold">{currentUser.full_name}</strong> • Tài khoản của bạn được xác thực để bảo đảm an toàn và chỉ sử dụng cho mục đích của Kho Đồ Liên Chiểu.
+                </>
+              ) : (
+                <>
+                  Chào mừng bạn đến với <strong className="font-bold">Kho Đồ Liên Chiểu</strong> • Mạng lưới chia sẻ đồ dùng P2P sinh viên & cư dân Hòa Khánh, Đà Nẵng.
+                </>
+              )}
             </span>
           </div>
           <Link
             href="/auth"
             className="hidden sm:inline-flex shrink-0 font-semibold underline hover:text-[#0A3F34]"
           >
-            Đổi tài khoản
+            {currentUser ? 'Đổi tài khoản' : 'Đăng nhập ngay'}
           </Link>
         </div>
       </section>

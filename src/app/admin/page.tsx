@@ -46,7 +46,7 @@ export default function AdminDashboardPage() {
   const [tradeSearch, setTradeSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
-  const isAdmin = currentUser.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin';
 
   // KPI Calculations
   const totalItems = items.length;
@@ -120,13 +120,15 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      {/* Role Check & Easy Switch Banner for Demo */}
+      {/* Role Check & Easy Switch Banner */}
       {!isAdmin && (
         <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
           <div className="flex items-center gap-3">
             <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
             <div>
-              <span className="font-bold text-sm">Bạn đang xem ở vai trò Sinh viên ({currentUser.full_name}).</span>
+              <span className="font-bold text-sm">
+                Bạn đang xem ở vai trò {currentUser ? `Sinh viên (${currentUser.full_name})` : 'Khách vãng lai'}.
+              </span>
               <p className="text-xs text-amber-700">Trang quản trị BQL chỉ dành cho quản trị viên.</p>
             </div>
           </div>
@@ -134,7 +136,7 @@ export default function AdminDashboardPage() {
             onClick={() => switchUser('usr-admin-lienchieu')}
             className="px-4 py-2 rounded-xl bg-[#0F5B4B] text-white text-xs font-bold hover:bg-[#0A3F34] cursor-pointer whitespace-nowrap"
           >
-            Chuyển sang Quản trị viên (Admin) ngay
+            Đăng nhập với Quản trị viên (Admin) ngay
           </button>
         </div>
       )}
