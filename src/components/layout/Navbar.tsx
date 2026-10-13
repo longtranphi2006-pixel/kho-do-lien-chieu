@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
@@ -19,9 +19,14 @@ import {
 export const Navbar: React.FC = () => {
   const router = useRouter();
   const { currentUser, notifications, logout } = useAppStore();
+  const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
@@ -88,7 +93,7 @@ export const Navbar: React.FC = () => {
               >
                 Tiến trình trao đổi
               </Link>
-              {currentUser?.role === 'admin' && (
+              {mounted && currentUser?.role === 'admin' && (
                 <Link
                   href="/admin"
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-amber-800 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors"
@@ -134,7 +139,7 @@ export const Navbar: React.FC = () => {
               </Link>
 
               {/* User Avatar & Dropdown / Login button */}
-              {currentUser ? (
+              {mounted && currentUser ? (
                 <div className="relative">
                   <button
                     onClick={() => setShowProfileMenu(!showProfileMenu)}
@@ -215,13 +220,15 @@ export const Navbar: React.FC = () => {
                     </div>
                   )}
                 </div>
-              ) : (
+              ) : mounted ? (
                 <Link
                   href="/auth"
                   className="px-4 py-2 rounded-full bg-[#0F5B4B] text-white text-xs sm:text-sm font-semibold hover:bg-[#0A3F34] shadow-sm transition-all"
                 >
                   Đăng nhập
                 </Link>
+              ) : (
+                <div className="w-16 h-8" />
               )}
             </div>
           </div>
