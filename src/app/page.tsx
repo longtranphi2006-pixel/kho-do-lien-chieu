@@ -44,11 +44,12 @@ export default function HomePage() {
       }
 
       // Location filter
-      if (
-        selectedLocation !== 'Toàn quận Liên Chiểu' &&
-        !item.location.toLowerCase().includes(selectedLocation.toLowerCase().replace('phường ', ''))
-      ) {
-        return false;
+      if (selectedLocation !== 'Toàn quận Liên Chiểu') {
+        const cleanSelected = selectedLocation.toLowerCase().replace('phường ', '').replace(/\(.*?\)/g, '').trim();
+        const itemLoc = item.location.toLowerCase();
+        if (!itemLoc.includes(cleanSelected) && !cleanSelected.includes(itemLoc)) {
+          return false;
+        }
       }
 
       // Keyword search

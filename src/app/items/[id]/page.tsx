@@ -4,6 +4,7 @@ import React, { useState, Suspense } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAppStore } from '@/lib/store';
+import { LOCATIONS, POPULAR_HANDOVER_HUBS } from '@/lib/constants';
 import { WarningBanner } from '@/components/common/WarningBanner';
 import {
   MapPin,
@@ -323,18 +324,64 @@ function ItemDetailContent() {
             </div>
 
             <form onSubmit={handleCreateRequest} className="space-y-4 text-xs sm:text-sm">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Địa điểm hẹn gặp giao nhận
-                </label>
-                <input
-                  type="text"
-                  value={pickupLocation}
-                  onChange={(e) => setPickupLocation(e.target.value)}
-                  placeholder="Ví dụ: Cổng 1 ĐH Bách Khoa (54 Nguyễn Lương Bằng)"
-                  required
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 focus:outline-hidden focus:border-[#0F5B4B] focus:ring-2 focus:ring-[#0F5B4B]/20"
-                />
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block font-semibold text-slate-700">
+                    Địa điểm hẹn gặp giao nhận
+                  </label>
+                  <span className="text-[11px] text-slate-500">Tự do chỉnh sửa hoặc chọn gợi ý</span>
+                </div>
+                <div className="relative">
+                  <MapPin className="w-4 h-4 text-[#0F5B4B] absolute left-3 top-3" />
+                  <input
+                    type="text"
+                    list="request-pickup-locations"
+                    value={pickupLocation}
+                    onChange={(e) => setPickupLocation(e.target.value)}
+                    placeholder="Ví dụ: Cổng 1 ĐH Bách Khoa (54 Nguyễn Lương Bằng)"
+                    required
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 focus:outline-hidden focus:border-[#0F5B4B] focus:ring-2 focus:ring-[#0F5B4B]/20"
+                  />
+                  <datalist id="request-pickup-locations">
+                    {LOCATIONS.filter((l) => l !== 'Toàn quận Liên Chiểu').map((loc) => (
+                      <option key={loc} value={loc} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* Quick suggestion chips */}
+                <div className="pt-1 space-y-1">
+                  <span className="text-[11px] font-medium text-slate-500">Điểm hẹn thuận tiện:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {item.location && (
+                      <button
+                        type="button"
+                        onClick={() => setPickupLocation(item.location)}
+                        className={`px-2 py-0.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                          pickupLocation === item.location
+                            ? 'bg-[#0F5B4B] text-white border-[#0F5B4B]'
+                            : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                        }`}
+                      >
+                        🎯 Điểm người trao: {item.location}
+                      </button>
+                    )}
+                    {POPULAR_HANDOVER_HUBS.slice(0, 6).map((hub) => (
+                      <button
+                        key={hub}
+                        type="button"
+                        onClick={() => setPickupLocation(hub)}
+                        className={`px-2 py-0.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                          pickupLocation === hub
+                            ? 'bg-[#0F5B4B] text-white border-[#0F5B4B]'
+                            : 'bg-slate-50 text-slate-700 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] border-slate-200'
+                        }`}
+                      >
+                        📍 {hub}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div>

@@ -27,11 +27,12 @@ function CatalogContent() {
         if (category !== 'Tất cả' && item.category !== category) return false;
         if (purpose !== 'ALL' && item.purpose !== purpose) return false;
         if (condition !== 'ALL' && item.condition !== condition) return false;
-        if (
-          location !== 'Toàn quận Liên Chiểu' &&
-          !item.location.toLowerCase().includes(location.toLowerCase().replace('phường ', ''))
-        ) {
-          return false;
+        if (location !== 'Toàn quận Liên Chiểu') {
+          const cleanLoc = location.toLowerCase().replace('phường ', '').replace(/\(.*?\)/g, '').trim();
+          const itemLoc = item.location.toLowerCase();
+          if (!itemLoc.includes(cleanLoc) && !cleanLoc.includes(itemLoc)) {
+            return false;
+          }
         }
         if (search.trim()) {
           const q = search.toLowerCase();

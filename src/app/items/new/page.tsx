@@ -3,7 +3,7 @@
 import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
-import { CATEGORIES, LOCATIONS, CONDITIONS } from '@/lib/constants';
+import { CATEGORIES, LOCATIONS, CONDITIONS, POPULAR_HANDOVER_HUBS } from '@/lib/constants';
 import { ItemCondition, ItemPurpose, ModerationResult } from '@/types';
 import {
   Upload,
@@ -453,23 +453,50 @@ export default function NewItemPage() {
         </div>
 
         {/* Preferred Handover Location */}
-        <div className="space-y-1.5">
-          <label className="block text-sm font-bold text-slate-800">
-            Địa điểm trao nhận thuận tiện (Liên Chiểu)
-          </label>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="block text-sm font-bold text-slate-800">
+              Địa điểm trao nhận thuận tiện (Liên Chiểu) <span className="text-rose-500">*</span>
+            </label>
+            <span className="text-[11px] text-slate-500">Tự do nhập hoặc bấm chọn nhanh</span>
+          </div>
           <div className="relative">
             <MapPin className="w-4 h-4 text-[#0F5B4B] absolute left-3.5 top-3" />
-            <select
+            <input
+              type="text"
+              required
+              list="location-suggestions"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
+              placeholder="Nhập địa chỉ cụ thể hoặc chọn gợi ý (Ví dụ: Cổng 1 ĐHBK, KTX DMC 579, số 12 Ngô Sĩ Liên...)"
               className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 text-slate-900 text-sm focus:outline-hidden focus:border-[#0F5B4B] focus:ring-2 focus:ring-[#0F5B4B]/20"
-            >
+            />
+            <datalist id="location-suggestions">
               {LOCATIONS.filter((l) => l !== 'Toàn quận Liên Chiểu').map((loc) => (
-                <option key={loc} value={loc}>
-                  {loc}
-                </option>
+                <option key={loc} value={loc} />
               ))}
-            </select>
+            </datalist>
+          </div>
+
+          {/* Quick selection chips */}
+          <div className="space-y-1">
+            <span className="text-[11px] font-medium text-slate-500">Điểm giao dịch sinh viên phổ biến:</span>
+            <div className="flex flex-wrap gap-1.5">
+              {POPULAR_HANDOVER_HUBS.map((hub) => (
+                <button
+                  key={hub}
+                  type="button"
+                  onClick={() => setLocation(hub)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer border ${
+                    location === hub
+                      ? 'bg-[#0F5B4B] text-white border-[#0F5B4B] shadow-xs'
+                      : 'bg-slate-50 text-slate-700 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] border-slate-200'
+                  }`}
+                >
+                  📍 {hub}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
