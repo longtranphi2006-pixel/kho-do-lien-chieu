@@ -25,12 +25,17 @@ import {
 declare global {
   interface Window {
     google?: any;
+    FB?: any;
+    fbAsyncInit?: () => void;
   }
 }
 
 const GOOGLE_CLIENT_ID =
   process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
   '358594784910-3t9jva017jp5pvp9865jibfngan4so4f.apps.googleusercontent.com';
+
+const FACEBOOK_APP_ID =
+  process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || '2399366357265045';
 
 function parseJwt(token: string) {
   try {
@@ -70,10 +75,11 @@ export default function AuthPage() {
   const [customOAuthName, setCustomOAuthName] = useState('');
   const [customOAuthEmail, setCustomOAuthEmail] = useState('');
 
-  // Load Google Identity Services SDK
+  // Load Google Identity Services SDK & Facebook JavaScript SDK
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    // 1. Google SDK
     const initGoogle = () => {
       if (window.google?.accounts?.id) {
         try {
@@ -117,6 +123,24 @@ export default function AuthPage() {
       document.body.appendChild(script);
     } else if (window.google?.accounts) {
       initGoogle();
+    }
+
+    // 2. Facebook SDK
+    if (!document.getElementById('facebook-jssdk')) {
+      window.fbAsyncInit = function () {
+        window.FB?.init({
+          appId: FACEBOOK_APP_ID,
+          cookie: true,
+          xfbml: true,
+          version: 'v21.0',
+        });
+      };
+      const fbScript = document.createElement('script');
+      fbScript.id = 'facebook-jssdk';
+      fbScript.src = 'https://connect.facebook.net/vi_VN/sdk.js';
+      fbScript.async = true;
+      fbScript.defer = true;
+      document.body.appendChild(fbScript);
     }
   }, [loginWithOAuth, router]);
 
@@ -224,6 +248,50 @@ export default function AuthPage() {
   };
 
   const handleOpenFacebook = async () => {
+    setIsLoading(true);
+
+    // 1. Try official Facebook JavaScript SDK
+    if (typeof window !== 'undefined' && window.FB) {
+      try {
+        window.FB.login(
+          (response: any) => {
+            if (response?.authResponse) {
+              window.FB.api(
+                '/me',
+                { fields: 'id,name,email,picture.width(400).height(400)' },
+                (profile: any) => {
+                  if (profile && profile.name) {
+                    loginWithOAuth({
+                      provider: 'Facebook',
+                      name: profile.name,
+                      email: profile.email || `${profile.id}@facebook.user`,
+                      avatar_url:
+                        profile.picture?.data?.url ||
+                        'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=400&q=80',
+                    });
+                    setIsLoading(false);
+                    router.push('/');
+                    return;
+                  }
+                  setIsLoading(false);
+                  setShowFacebookDialog(true);
+                }
+              );
+            } else {
+              console.warn('Facebook login cancelled or not authorized');
+              setIsLoading(false);
+              setShowFacebookDialog(true);
+            }
+          },
+          { scope: 'public_profile,email' }
+        );
+        return;
+      } catch (err) {
+        console.warn('Facebook SDK login error:', err);
+      }
+    }
+
+    // 2. Try Supabase OAuth if configured
     if (isSupabaseConfigured() && supabase) {
       try {
         await supabase.auth.signInWithOAuth({
@@ -235,6 +303,9 @@ export default function AuthPage() {
         console.warn('Supabase OAuth error, using Facebook Dialog:', err);
       }
     }
+
+    // 3. Fallback dialog
+    setIsLoading(false);
     setShowFacebookDialog(true);
   };
 
