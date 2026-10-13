@@ -194,7 +194,7 @@ export default function AuthPage() {
 
     const fbAuthUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${FACEBOOK_APP_ID}&redirect_uri=${encodeURIComponent(
       redirectUri
-    )}&state=facebook_auth&response_type=token&scope=public_profile,email`;
+    )}&state=facebook_auth&response_type=token&scope=public_profile`;
 
     window.location.href = fbAuthUrl;
   };
