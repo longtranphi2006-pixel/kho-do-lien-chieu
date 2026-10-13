@@ -31,7 +31,8 @@ import {
   AlertTriangle,
   X,
 } from 'lucide-react';
-import { TradeMessage } from '@/types';
+import { TradeMessage, Transaction } from '@/types';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 function TradeStepperContent() {
   const params = useParams();
@@ -47,7 +48,10 @@ function TradeStepperContent() {
     currentUser,
     allUsers,
   } = useAppStore();
-  const transaction = getTransactionById(tradeId);
+
+  const storeTransaction = getTransactionById(tradeId);
+  const [directTransaction, setDirectTransaction] = useState<Transaction | null>(null);
+  const [isLoadingDirect, setIsLoadingDirect] = useState(!storeTransaction);
 
   const [isUpdating, setIsUpdating] = useState(false);
   // Allow user to switch viewing perspective during manual testing if needed
@@ -63,6 +67,65 @@ function TradeStepperContent() {
   const [cancelReason, setCancelReason] = useState('');
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+
+  // Direct Supabase fallback fetch if transaction not found in in-memory store
+  useEffect(() => {
+    if (storeTransaction) {
+      setIsLoadingDirect(false);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchDirect = async () => {
+      if (!isSupabaseConfigured() || !supabase) {
+        if (isMounted) setIsLoadingDirect(false);
+        return;
+      }
+      try {
+        const { data: tData } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('id', tradeId)
+          .maybeSingle();
+
+        if (tData && isMounted) {
+          const [itemRes, giverRes, receiverRes] = await Promise.all([
+            supabase.from('items').select('*').eq('id', tData.item_id).maybeSingle(),
+            supabase.from('profiles').select('*').eq('id', tData.giver_id).maybeSingle(),
+            supabase.from('profiles').select('*').eq('id', tData.receiver_id).maybeSingle(),
+          ]);
+
+          let giver = giverRes.data || undefined;
+          if ((!giver || giver.full_name === 'Thành viên Liên Chiểu') && currentUser?.id === tData.giver_id) {
+            giver = currentUser;
+          }
+          let receiver = receiverRes.data || undefined;
+          if ((!receiver || receiver.full_name === 'Thành viên Liên Chiểu') && currentUser?.id === tData.receiver_id) {
+            receiver = currentUser;
+          }
+
+          const fullTx: Transaction = {
+            ...tData,
+            item: itemRes.data || undefined,
+            giver,
+            receiver,
+          };
+          setDirectTransaction(fullTx);
+        }
+      } catch (err) {
+        console.warn('Direct transaction fetch error:', err);
+      } finally {
+        if (isMounted) setIsLoadingDirect(false);
+      }
+    };
+
+    fetchDirect();
+    return () => {
+      isMounted = false;
+    };
+  }, [tradeId, storeTransaction, currentUser]);
+
+  const transaction = storeTransaction || directTransaction;
 
   const myUserIds = React.useMemo(() => {
     const ids = new Set<string>();
@@ -86,26 +149,14 @@ function TradeStepperContent() {
     return ids;
   }, [currentUser, allUsers]);
 
-  if (!transaction) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-16 text-center space-y-4">
-        <h2 className="text-2xl font-bold text-slate-800">Không tìm thấy phiên trao đổi</h2>
-        <p className="text-slate-500 text-sm">Mã giao dịch không tồn tại hoặc đã được chuyển giao.</p>
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white font-semibold text-sm"
-        >
-          <ArrowLeft className="w-4 h-4" /> Quay về Trang chủ
-        </Link>
-      </div>
-    );
-  }
-
-  const { item, giver, receiver, status } = transaction;
+  const item = transaction?.item;
+  const giver = transaction?.giver;
+  const receiver = transaction?.receiver;
+  const status = transaction?.status || 'REQUESTED';
 
   // Determine effective perspective (Giver vs Receiver)
-  const isActuallyGiver = myUserIds.has(transaction.giver_id);
-  const isActuallyReceiver = myUserIds.has(transaction.receiver_id);
+  const isActuallyGiver = transaction ? myUserIds.has(transaction.giver_id) : false;
+  const isActuallyReceiver = transaction ? myUserIds.has(transaction.receiver_id) : false;
   const isParticipant = isActuallyGiver || isActuallyReceiver;
 
   let effectiveRole: 'giver' | 'receiver' = 'giver';
@@ -140,54 +191,17 @@ function TradeStepperContent() {
     }
   };
 
-  const bothConfirmed = Boolean(transaction.giver_confirmed && transaction.receiver_confirmed);
+  const bothConfirmed = Boolean(transaction?.giver_confirmed && transaction?.receiver_confirmed);
   const isCompleted = status === 'COMPLETED' || bothConfirmed;
   const currentStepIndex = isCompleted ? 3 : getStepIndex(status);
 
   // Auto-advance trade to COMPLETED if both parties have confirmed
   React.useEffect(() => {
+    if (!transaction) return;
     if (bothConfirmed && status !== 'COMPLETED') {
       advanceTradeStatus(transaction.id, 'COMPLETED');
     }
-  }, [bothConfirmed, status, transaction.id, advanceTradeStatus]);
-
-  const handleAdvance = (nextStatus: TradeStatus) => {
-    setIsUpdating(true);
-    advanceTradeStatus(transaction.id, nextStatus);
-    setTimeout(() => {
-      setIsUpdating(false);
-      if (nextStatus === 'COMPLETED') {
-        router.push(`/trades/${transaction.id}/completed`);
-      }
-    }, 400);
-  };
-
-  const handleConfirmRole = (role: 'giver' | 'receiver') => {
-    setIsUpdating(true);
-    confirmTradeHandover(transaction.id, role);
-    setTimeout(() => {
-      setIsUpdating(false);
-      const updated = getTransactionById(tradeId);
-      if (updated?.status === 'COMPLETED' || (updated?.giver_confirmed && updated?.receiver_confirmed)) {
-        router.push(`/trades/${transaction.id}/completed`);
-      }
-    }, 450);
-  };
-
-  // Rule: "chỉ dc hủy trước bước xác nhận của ng kia"
-  const otherAlreadyConfirmed = isActuallyGiver
-    ? Boolean(transaction.receiver_confirmed)
-    : isActuallyReceiver
-    ? Boolean(transaction.giver_confirmed)
-    : Boolean(transaction.giver_confirmed || transaction.receiver_confirmed);
-
-  const canCancel =
-    isParticipant &&
-    transaction.status !== 'COMPLETED' &&
-    transaction.status !== 'CANCELLED' &&
-    !otherAlreadyConfirmed;
-
-  const isCancelled = transaction.status === 'CANCELLED';
+  }, [bothConfirmed, status, transaction?.id, advanceTradeStatus]);
 
   // Parse chat messages from transaction.note
   const chatMessages: TradeMessage[] = React.useMemo(() => {
@@ -211,9 +225,50 @@ function TradeStepperContent() {
     ];
   }, [transaction?.note, transaction?.receiver_id, transaction?.created_at, receiver]);
 
+  const handleAdvance = (nextStatus: TradeStatus) => {
+    if (!transaction) return;
+    setIsUpdating(true);
+    advanceTradeStatus(transaction.id, nextStatus);
+    setTimeout(() => {
+      setIsUpdating(false);
+      if (nextStatus === 'COMPLETED') {
+        router.push(`/trades/${transaction.id}/completed`);
+      }
+    }, 400);
+  };
+
+  const handleConfirmRole = (role: 'giver' | 'receiver') => {
+    if (!transaction) return;
+    setIsUpdating(true);
+    confirmTradeHandover(transaction.id, role);
+    setTimeout(() => {
+      setIsUpdating(false);
+      const updated = getTransactionById(tradeId);
+      if (updated?.status === 'COMPLETED' || (updated?.giver_confirmed && updated?.receiver_confirmed)) {
+        router.push(`/trades/${transaction.id}/completed`);
+      }
+    }, 450);
+  };
+
+  // Rule: "chỉ dc hủy trước bước xác nhận của ng kia"
+  const otherAlreadyConfirmed = isActuallyGiver
+    ? Boolean(transaction?.receiver_confirmed)
+    : isActuallyReceiver
+    ? Boolean(transaction?.giver_confirmed)
+    : Boolean(transaction?.giver_confirmed || transaction?.receiver_confirmed);
+
+  const canCancel =
+    Boolean(transaction) &&
+    isParticipant &&
+    status !== 'COMPLETED' &&
+    status !== 'CANCELLED' &&
+    !otherAlreadyConfirmed;
+
+  const isCancelled = status === 'CANCELLED';
+
   const handleSendChatMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!chatInput.trim() || isSendingMsg) return;
+    if (!transaction || !chatInput.trim() || isSendingMsg) return;
     setIsSendingMsg(true);
     try {
       await sendTradeMessage(transaction.id, chatInput.trim());
@@ -229,6 +284,7 @@ function TradeStepperContent() {
   };
 
   const handleConfirmCancel = async () => {
+    if (!transaction) return;
     setIsCancelling(true);
     setCancelError(null);
     try {
@@ -240,6 +296,30 @@ function TradeStepperContent() {
       setIsCancelling(false);
     }
   };
+
+  if (isLoadingDirect && !transaction) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-24 text-center space-y-4">
+        <div className="w-10 h-10 border-4 border-[#0F5B4B] border-t-transparent rounded-full animate-spin mx-auto" />
+        <p className="text-slate-500 font-medium text-sm">Đang tải thông tin phiên trao đổi...</p>
+      </div>
+    );
+  }
+
+  if (!transaction) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-16 text-center space-y-4">
+        <h2 className="text-2xl font-bold text-slate-800">Không tìm thấy phiên trao đổi</h2>
+        <p className="text-slate-500 text-sm">Mã giao dịch #{tradeId} không tồn tại hoặc đã được chuyển giao.</p>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white font-semibold text-sm"
+        >
+          <ArrowLeft className="w-4 h-4" /> Quay về Trang chủ
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
