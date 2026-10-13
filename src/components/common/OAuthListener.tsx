@@ -28,15 +28,24 @@ export function OAuthListener() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const hash = window.location.hash;
-    if (!hash || (!hash.includes('access_token') && !hash.includes('id_token'))) {
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+
+    if (
+      !hash.includes('access_token') &&
+      !hash.includes('id_token') &&
+      !search.includes('access_token') &&
+      !search.includes('id_token')
+    ) {
       return;
     }
 
-    const params = new URLSearchParams(hash.substring(1));
-    const accessToken = params.get('access_token');
-    const idToken = params.get('id_token');
-    const state = params.get('state');
+    const hashParams = new URLSearchParams(hash.startsWith('#') ? hash.substring(1) : hash);
+    const searchParams = new URLSearchParams(search.startsWith('?') ? search.substring(1) : search);
+
+    const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
+    const idToken = hashParams.get('id_token') || searchParams.get('id_token');
+    const state = hashParams.get('state') || searchParams.get('state');
 
     // 1. Facebook OAuth Callback
     if (state === 'facebook_auth' && accessToken) {
@@ -55,7 +64,7 @@ export function OAuthListener() {
                 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=400&q=80',
             });
             window.history.replaceState(null, '', window.location.pathname);
-            router.push('/');
+            window.location.href = '/';
           }
         })
         .catch((err) => {
@@ -67,17 +76,17 @@ export function OAuthListener() {
     // 2. Google OAuth ID Token Callback
     if (idToken) {
       const payload = parseJwt(idToken);
-      if (payload && payload.email) {
+      if (payload && (payload.email || payload.name)) {
         loginWithOAuth({
           provider: 'Google',
-          name: payload.name || payload.email.split('@')[0],
-          email: payload.email,
+          name: payload.name || payload.email?.split('@')[0] || 'Người dùng Google',
+          email: payload.email || `${payload.sub || Date.now()}@gmail.com`,
           avatar_url:
             payload.picture ||
             'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
         });
         window.history.replaceState(null, '', window.location.pathname);
-        router.push('/');
+        window.location.href = '/';
         return;
       }
     }
@@ -89,17 +98,17 @@ export function OAuthListener() {
       })
         .then((res) => res.json())
         .then((googleUser) => {
-          if (googleUser && googleUser.email) {
+          if (googleUser && (googleUser.email || googleUser.name)) {
             loginWithOAuth({
               provider: 'Google',
-              name: googleUser.name || googleUser.email.split('@')[0],
-              email: googleUser.email,
+              name: googleUser.name || googleUser.email?.split('@')[0] || 'Người dùng Google',
+              email: googleUser.email || `${Date.now()}@gmail.com`,
               avatar_url:
                 googleUser.picture ||
                 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
             });
             window.history.replaceState(null, '', window.location.pathname);
-            router.push('/');
+            window.location.href = '/';
           }
         })
         .catch((err) => {

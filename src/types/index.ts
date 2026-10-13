@@ -22,6 +22,7 @@ export interface Profile {
   items_given_count: number;
   completed_trades_count: number;
   role: UserRole;
+  is_locked?: boolean;
   address?: string;
   created_at: string;
 }

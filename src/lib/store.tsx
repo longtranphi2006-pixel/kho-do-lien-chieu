@@ -46,6 +46,7 @@ interface AppContextType {
   markNotificationAsRead: (id: string) => void;
   favorites: string[];
   toggleFavorite: (itemId: string) => void;
+  toggleLockUser: (userId: string) => void;
   isSupabaseMode: boolean;
   activeRole: 'user' | 'admin' | 'guest';
 }
@@ -141,6 +142,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (matched) {
       setCurrentUserId(matched.id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, matched.id);
+      } catch {}
       return true;
     }
 
@@ -161,8 +165,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       created_at: new Date().toISOString(),
     };
 
-    setProfiles((prev) => [...prev, newProfile]);
+    setProfiles((prev) => {
+      const updated = [...prev, newProfile];
+      try {
+        localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
     setCurrentUserId(newProfile.id);
+    try {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, newProfile.id);
+    } catch {}
     return true;
   };
 
@@ -177,6 +190,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (existing) {
       setCurrentUserId(existing.id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, existing.id);
+      } catch {}
       return existing;
     }
 
@@ -197,8 +213,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       created_at: new Date().toISOString(),
     };
 
-    setProfiles((prev) => [...prev, newProfile]);
+    setProfiles((prev) => {
+      const updated = [...prev, newProfile];
+      try {
+        localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
     setCurrentUserId(newProfile.id);
+    try {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, newProfile.id);
+    } catch {}
     return newProfile;
   };
 
@@ -300,6 +325,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : item
       )
     );
+  };
+
+  const toggleLockUser = (userId: string) => {
+    setProfiles((prev) => {
+      const updated = prev.map((u) =>
+        u.id === userId ? { ...u, is_locked: !u.is_locked } : u
+      );
+      try {
+        localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
   };
 
   const getTransactionById = (id: string): Transaction | undefined => {
@@ -476,6 +513,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         markNotificationAsRead,
         favorites,
         toggleFavorite,
+        toggleLockUser,
         isSupabaseMode: isSupabaseConfigured(),
         activeRole: currentUser ? currentUser.role : 'guest',
       }}

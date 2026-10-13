@@ -88,13 +88,15 @@ export const Navbar: React.FC = () => {
               >
                 Tiến trình trao đổi
               </Link>
-              <Link
-                href="/admin"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-700 hover:text-[#0F5B4B] hover:bg-[#EAF7F2] transition-colors"
-              >
-                <Shield className="w-4 h-4 text-[#0F5B4B]" />
-                Quản trị Admin
-              </Link>
+              {currentUser?.role === 'admin' && (
+                <Link
+                  href="/admin"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-amber-800 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors"
+                >
+                  <Shield className="w-4 h-4 text-amber-700" />
+                  Quản trị Admin
+                </Link>
+              )}
             </nav>
 
             {/* Right Action Icons */}
