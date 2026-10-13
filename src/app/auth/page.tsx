@@ -199,14 +199,7 @@ export default function AuthPage() {
     window.location.href = fbAuthUrl;
   };
 
-  const handleQuickSelect = (id: string) => {
-    const user = allUsers.find((u) => u.id === id);
-    if (user) {
-      setIdentifier(user.email || user.phone || '');
-      setPassword('12345678');
-      setErrorMessage('');
-    }
-  };
+
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-8">
@@ -422,33 +415,6 @@ export default function AuthPage() {
           </button>
         </form>
 
-        {/* Quick Demo Account Selector for testing */}
-        <div className="pt-2 border-t border-slate-100 space-y-1.5">
-          <div className="text-[11px] text-slate-500 font-medium">Tài khoản mẫu có sẵn (nhấn để điền):</div>
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              onClick={() => handleQuickSelect('usr-an-bachkhoa')}
-              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-[11px] font-semibold text-slate-700 cursor-pointer transition-colors"
-            >
-              🎓 SV Bách Khoa (An)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickSelect('usr-mai-supham')}
-              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-[11px] font-semibold text-slate-700 cursor-pointer transition-colors"
-            >
-              🎓 SV Sư Phạm (Mai)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickSelect('usr-admin-lienchieu')}
-              className="px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-[11px] font-semibold text-purple-800 cursor-pointer transition-colors"
-            >
-              🛡️ Admin BQL
-            </button>
-          </div>
-        </div>
 
         {/* OAuth Buttons (Google & Facebook) */}
         <div className="space-y-3">
