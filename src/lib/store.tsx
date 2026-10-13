@@ -123,6 +123,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [profiles, currentUserId, items, transactions, reviews, notifications, favorites, isInitialized]);
 
+  // Helper to ensure any referenced profile exists in Supabase Cloud
+  const ensureProfileInSupabase = async (profileOrId: Profile | string | null | undefined): Promise<void> => {
+    if (!profileOrId || !isSupabaseConfigured() || !supabase) return;
+    try {
+      let pObj: Partial<Profile> | undefined;
+      if (typeof profileOrId === 'string') {
+        const found = profiles.find((p) => p.id === profileOrId);
+        pObj = found || {
+          id: profileOrId,
+          full_name: 'Thành viên Liên Chiểu',
+          role: 'user',
+          is_verified: true,
+          reputation_score: 0,
+          items_given_count: 0,
+          completed_trades_count: 0,
+          created_at: new Date().toISOString(),
+        };
+      } else {
+        pObj = profileOrId;
+      }
+      if (!pObj.id) return;
+      await supabase.from('profiles').upsert({
+        id: pObj.id,
+        full_name: pObj.full_name || 'Thành viên Liên Chiểu',
+        avatar_url: pObj.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
+        phone: pObj.phone,
+        email: pObj.email,
+        university: pObj.university || 'Trường Đại học Bách khoa - ĐHĐN',
+        department: pObj.department,
+        student_id: pObj.student_id,
+        is_verified: pObj.is_verified ?? true,
+        reputation_score: pObj.reputation_score ?? 0,
+        items_given_count: pObj.items_given_count ?? 0,
+        completed_trades_count: pObj.completed_trades_count ?? 0,
+        role: pObj.role || 'user',
+        is_locked: pObj.is_locked ?? false,
+        address: pObj.address,
+      });
+    } catch (err) {
+      console.warn('ensureProfileInSupabase error:', err);
+    }
+  };
+
   // Sync with Supabase PostgreSQL Cloud & Subscribe to Realtime Updates
   useEffect(() => {
     if (!isSupabaseConfigured() || !supabase) return;
@@ -142,9 +185,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         if (!isMounted) return;
 
-        if (itemsRes.data && itemsRes.data.length > 0) {
-          setItems(itemsRes.data);
+        // 1. NON-DESTRUCTIVE ITEMS MERGE:
+        // Keep any newly added local items that haven't landed in Supabase yet, and auto-push them!
+        if (itemsRes.data) {
+          const dbItems = itemsRes.data as Item[];
+          const dbItemIds = new Set(dbItems.map((i) => i.id));
+
+          setItems((prev) => {
+            const pendingSync = prev.filter((i) => !dbItemIds.has(i.id));
+
+            // Background push un-synced items to Supabase
+            if (pendingSync.length > 0) {
+              pendingSync.forEach(async (pending) => {
+                try {
+                  await ensureProfileInSupabase(pending.user_id);
+                  await sb.from('items').upsert({
+                    id: pending.id,
+                    user_id: pending.user_id,
+                    title: pending.title,
+                    description: pending.description,
+                    category: pending.category,
+                    condition: pending.condition,
+                    purpose: pending.purpose,
+                    location: pending.location,
+                    images: pending.images,
+                    status: pending.status,
+                    ai_moderation_reason: pending.ai_moderation_reason,
+                    ai_moderation_score: pending.ai_moderation_score,
+                    favorites_count: pending.favorites_count || 0,
+                    created_at: pending.created_at,
+                  });
+                } catch (e) {
+                  console.warn('Auto-sync pending item error:', e);
+                }
+              });
+            }
+
+            return [...pendingSync, ...dbItems];
+          });
         }
+
+        // 2. Profiles merge
         if (profilesRes.data && profilesRes.data.length > 0) {
           setProfiles((prev) => {
             const map = new Map(prev.map((p) => [p.id, p]));
@@ -152,14 +233,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return Array.from(map.values());
           });
         }
-        if (transRes.data && transRes.data.length > 0) {
-          setTransactions(transRes.data);
+
+        // 3. Transactions merge
+        if (transRes.data) {
+          const dbTrans = transRes.data as Transaction[];
+          const dbTransIds = new Set(dbTrans.map((t) => t.id));
+          setTransactions((prev) => {
+            const pendingTrans = prev.filter((t) => !dbTransIds.has(t.id));
+            return [...pendingTrans, ...dbTrans];
+          });
         }
-        if (reviewsRes.data && reviewsRes.data.length > 0) {
-          setReviews(reviewsRes.data);
+
+        // 4. Reviews merge
+        if (reviewsRes.data) {
+          const dbReviews = reviewsRes.data as Review[];
+          const dbReviewIds = new Set(dbReviews.map((r) => r.id));
+          setReviews((prev) => {
+            const pendingReviews = prev.filter((r) => !dbReviewIds.has(r.id));
+            return [...pendingReviews, ...dbReviews];
+          });
         }
-        if (notifsRes.data && notifsRes.data.length > 0) {
-          setNotifications(notifsRes.data);
+
+        // 5. Notifications merge
+        if (notifsRes.data) {
+          const dbNotifs = notifsRes.data as NotificationItem[];
+          const dbNotifIds = new Set(dbNotifs.map((n) => n.id));
+          setNotifications((prev) => {
+            const pendingNotifs = prev.filter((n) => !dbNotifIds.has(n.id));
+            return [...pendingNotifs, ...dbNotifs];
+          });
         }
       } catch (err) {
         console.warn('Supabase initial sync error:', err);
@@ -212,11 +314,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setNotifications((prev) => [payload.new as NotificationItem, ...prev.filter((n) => n.id !== payload.new.id)]);
+          }
+        }
+      )
       .subscribe();
+
+    // Cross-tab and mobile foreground focus synchronization
+    const handleFocus = () => {
+      syncFromSupabase();
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        syncFromSupabase();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // Guaranteed polling heartbeat every 6 seconds across mobile & desktop
+    const pollTimer = setInterval(() => {
+      syncFromSupabase();
+    }, 6000);
 
     return () => {
       isMounted = false;
       sb.removeChannel(channel);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(pollTimer);
     };
   }, []);
 
@@ -243,6 +374,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, matched.id);
       } catch {}
+      if (isSupabaseConfigured() && supabase) {
+        ensureProfileInSupabase(matched);
+      }
       return true;
     }
 
@@ -274,6 +408,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, newProfile.id);
     } catch {}
+
+    if (isSupabaseConfigured() && supabase) {
+      ensureProfileInSupabase(newProfile);
+    }
+
     return true;
   };
 
@@ -291,6 +430,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, existing.id);
       } catch {}
+      if (isSupabaseConfigured() && supabase) {
+        ensureProfileInSupabase(existing);
+      }
       return existing;
     }
 
@@ -324,7 +466,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {}
 
     if (isSupabaseConfigured() && supabase) {
-      supabase.from('profiles').upsert(newProfile).then(() => {});
+      ensureProfileInSupabase(newProfile);
     }
 
     return newProfile;
@@ -368,7 +510,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentUserId(newProfile.id);
 
     if (isSupabaseConfigured() && supabase) {
-      supabase.from('profiles').upsert(newProfile).then(() => {});
+      ensureProfileInSupabase(newProfile);
     }
 
     return newProfile;
@@ -405,24 +547,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (isSupabaseConfigured() && supabase) {
-      supabase.from('items').insert({
-        id: newItem.id,
-        user_id: newItem.user_id,
-        title: newItem.title,
-        description: newItem.description,
-        category: newItem.category,
-        condition: newItem.condition,
-        purpose: newItem.purpose,
-        location: newItem.location,
-        images: newItem.images,
-        status: newItem.status,
-        ai_moderation_reason: newItem.ai_moderation_reason,
-        ai_moderation_score: newItem.ai_moderation_score,
-        favorites_count: 0,
-        created_at: newItem.created_at,
-      }).then(({ error }) => {
-        if (error) console.error('Supabase addItem error:', error);
-      });
+      const sb = supabase;
+      const pushToSupabase = async () => {
+        try {
+          // 1. Ensure author profile is in profiles table first to satisfy foreign keys
+          await ensureProfileInSupabase(newItem.user_id);
+
+          // 2. Upsert the item into items table
+          const { error } = await sb.from('items').upsert({
+            id: newItem.id,
+            user_id: newItem.user_id,
+            title: newItem.title,
+            description: newItem.description,
+            category: newItem.category,
+            condition: newItem.condition,
+            purpose: newItem.purpose,
+            location: newItem.location,
+            images: newItem.images,
+            status: newItem.status,
+            ai_moderation_reason: newItem.ai_moderation_reason,
+            ai_moderation_score: newItem.ai_moderation_score,
+            favorites_count: 0,
+            created_at: newItem.created_at,
+          });
+
+          if (error) {
+            console.error('Supabase addItem error:', error);
+          } else {
+            console.log('Item pushed to Supabase Cloud successfully:', newItem.id);
+          }
+        } catch (err) {
+          console.error('addItem Supabase exception:', err);
+        }
+      };
+      pushToSupabase();
     }
 
     return newItem;
@@ -536,10 +694,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     updateItem(params.itemId, { status: 'IN_PROGRESS' });
 
     if (isSupabaseConfigured() && supabase) {
-      supabase.from('transactions').insert(newTransaction).then(({ error }) => {
-        if (error) console.error('Supabase createTradeRequest error:', error);
-      });
-      supabase.from('items').update({ status: 'IN_PROGRESS' }).eq('id', params.itemId).then(() => {});
+      const sb = supabase;
+      const pushTrade = async () => {
+        try {
+          await ensureProfileInSupabase(targetItem.user_id);
+          await ensureProfileInSupabase(receiverId);
+          await sb.from('transactions').upsert(newTransaction);
+          await sb.from('items').update({ status: 'IN_PROGRESS' }).eq('id', params.itemId);
+          await sb.from('notifications').upsert(donorNotif);
+        } catch (err) {
+          console.error('Supabase createTradeRequest error:', err);
+        }
+      };
+      pushTrade();
     }
 
     const donorNotif: NotificationItem = {
@@ -708,7 +875,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setReviews((prev) => [newReview, ...prev]);
 
     if (isSupabaseConfigured() && supabase) {
-      supabase.from('reviews').insert(newReview).then(() => {});
+      const sb = supabase;
+      const pushReview = async () => {
+        try {
+          await ensureProfileInSupabase(reviewerId);
+          await ensureProfileInSupabase(params.revieweeId);
+          await sb.from('reviews').upsert(newReview);
+          await sb.from('notifications').upsert(notif);
+        } catch (err) {
+          console.error('Supabase submitReview error:', err);
+        }
+      };
+      pushReview();
     }
 
     const notif: NotificationItem = {

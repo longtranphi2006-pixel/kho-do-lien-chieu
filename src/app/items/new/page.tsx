@@ -40,8 +40,8 @@ const processImageFile = (file: File): Promise<string> => {
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        const maxWidth = 1200;
-        const maxHeight = 1200;
+        const maxWidth = 800;
+        const maxHeight = 800;
         let width = img.width;
         let height = img.height;
 
@@ -64,7 +64,7 @@ const processImageFile = (file: File): Promise<string> => {
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.68);
         resolve(dataUrl);
       };
       img.onerror = () => {

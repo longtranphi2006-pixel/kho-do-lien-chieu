@@ -4,15 +4,25 @@
 -- Architecture: Supabase Cloud Serverless + Realtime + Web Sync
 -- ==============================================================================
 
--- 1. DROP EXISTING CONSTRAINTS IF ANY TO ALLOW CLEAN RE-RUN
-DROP TABLE IF EXISTS public.reviews CASCADE;
-DROP TABLE IF EXISTS public.notifications CASCADE;
-DROP TABLE IF EXISTS public.transactions CASCADE;
-DROP TABLE IF EXISTS public.items CASCADE;
-DROP TABLE IF EXISTS public.profiles CASCADE;
+-- 0. IF TABLES ALREADY EXIST: DROP RESTRICTIVE FOREIGN KEY CONSTRAINTS
+ALTER TABLE public.items DROP CONSTRAINT IF EXISTS items_user_id_fkey;
+ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_giver_id_fkey;
+ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_receiver_id_fkey;
+ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_item_id_fkey;
+ALTER TABLE public.reviews DROP CONSTRAINT IF EXISTS reviews_transaction_id_fkey;
+ALTER TABLE public.reviews DROP CONSTRAINT IF EXISTS reviews_reviewer_id_fkey;
+ALTER TABLE public.reviews DROP CONSTRAINT IF EXISTS reviews_reviewee_id_fkey;
+ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS notifications_user_id_fkey;
+
+-- 1. DROP EXISTING CONSTRAINTS IF ANY TO ALLOW CLEAN RE-RUN (OPTIONAL)
+-- DROP TABLE IF EXISTS public.reviews CASCADE;
+-- DROP TABLE IF EXISTS public.notifications CASCADE;
+-- DROP TABLE IF EXISTS public.transactions CASCADE;
+-- DROP TABLE IF EXISTS public.items CASCADE;
+-- DROP TABLE IF EXISTS public.profiles CASCADE;
 
 -- 2. TABLE: PROFILES (User identity & university verification)
-CREATE TABLE public.profiles (
+CREATE TABLE IF NOT EXISTS public.profiles (
   id TEXT PRIMARY KEY,
   full_name TEXT NOT NULL,
   avatar_url TEXT,
@@ -32,9 +42,9 @@ CREATE TABLE public.profiles (
 );
 
 -- 3. TABLE: ITEMS (Community sharing & bartering listings)
-CREATE TABLE public.items (
+CREATE TABLE IF NOT EXISTS public.items (
   id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
   title TEXT NOT NULL,
   description TEXT NOT NULL,
   category TEXT NOT NULL,
@@ -50,11 +60,11 @@ CREATE TABLE public.items (
 );
 
 -- 4. TABLE: TRANSACTIONS (P2P 4-Step Stepper Handover Tracker)
-CREATE TABLE public.transactions (
+CREATE TABLE IF NOT EXISTS public.transactions (
   id TEXT PRIMARY KEY,
-  item_id TEXT NOT NULL REFERENCES public.items(id) ON DELETE CASCADE,
-  giver_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  receiver_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  item_id TEXT NOT NULL,
+  giver_id TEXT NOT NULL,
+  receiver_id TEXT NOT NULL,
   status TEXT DEFAULT 'REQUESTED',
   scheduled_date TIMESTAMPTZ,
   pickup_location TEXT,
@@ -66,20 +76,20 @@ CREATE TABLE public.transactions (
 );
 
 -- 5. TABLE: REVIEWS (1-5 Star community ratings & feedback)
-CREATE TABLE public.reviews (
+CREATE TABLE IF NOT EXISTS public.reviews (
   id TEXT PRIMARY KEY,
-  transaction_id TEXT NOT NULL REFERENCES public.transactions(id) ON DELETE CASCADE,
-  reviewer_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  reviewee_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  transaction_id TEXT NOT NULL,
+  reviewer_id TEXT NOT NULL,
+  reviewee_id TEXT NOT NULL,
   rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
   comment TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- 6. TABLE: NOTIFICATIONS (In-app alerts)
-CREATE TABLE public.notifications (
+CREATE TABLE IF NOT EXISTS public.notifications (
   id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
   is_read BOOLEAN DEFAULT false,
