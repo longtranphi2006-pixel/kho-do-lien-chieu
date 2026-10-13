@@ -54,6 +54,8 @@ export interface Transaction {
   scheduled_date?: string;
   pickup_location?: string;
   note?: string;
+  giver_confirmed?: boolean;
+  receiver_confirmed?: boolean;
   created_at: string;
   completed_at?: string;
   item?: Item;

@@ -1,22 +1,25 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
 import { CATEGORIES, LOCATIONS, CONDITIONS } from '@/lib/constants';
 import { ItemCondition, ItemPurpose, ModerationResult } from '@/types';
 import {
   Upload,
+  Camera,
+  Image as ImageIcon,
   Sparkles,
   CheckCircle2,
   AlertTriangle,
   Gift,
   ArrowLeftRight,
   MapPin,
-  Image as ImageIcon,
   ShieldAlert,
   ArrowLeft,
   X,
+  Plus,
+  Loader2,
 } from 'lucide-react';
 
 const PRESET_SAMPLE_IMAGES = [
@@ -27,9 +30,60 @@ const PRESET_SAMPLE_IMAGES = [
   { label: 'Balo đi học', url: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=800&q=80' },
 ];
 
+const processImageFile = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error('Tệp tải lên không phải hình ảnh'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxWidth = 1200;
+        const maxHeight = 1200;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        resolve(dataUrl);
+      };
+      img.onerror = () => {
+        resolve(event.target?.result as string);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
 export default function NewItemPage() {
   const router = useRouter();
   const { addItem, currentUser } = useAppStore();
+
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessingPhotos, setIsProcessingPhotos] = useState(false);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -44,17 +98,30 @@ export default function NewItemPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [moderationResult, setModerationResult] = useState<ModerationResult | null>(null);
 
-  const handleAddSampleImage = (url: string) => {
-    if (!images.includes(url)) {
-      setImages([...images, url]);
+  const handleFilesSelected = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    setIsProcessingPhotos(true);
+    try {
+      const processed: string[] = [];
+      for (let i = 0; i < fileList.length; i++) {
+        if (images.length + processed.length >= 6) break;
+        const dataUrl = await processImageFile(fileList[i]);
+        processed.push(dataUrl);
+      }
+      setImages((prev) => [...prev, ...processed]);
+    } catch (err) {
+      console.error('Lỗi nén và đọc ảnh:', err);
+      alert('Không thể đọc ảnh được chọn. Vui lòng thử lại với ảnh khác.');
+    } finally {
+      setIsProcessingPhotos(false);
+      if (galleryInputRef.current) galleryInputRef.current.value = '';
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
     }
   };
 
-  const handleAddCustomImage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (customImageUrl.trim() && !images.includes(customImageUrl.trim())) {
-      setImages([...images, customImageUrl.trim()]);
-      setCustomImageUrl('');
+  const handleAddSampleImage = (url: string) => {
+    if (!images.includes(url) && images.length < 6) {
+      setImages([...images, url]);
     }
   };
 
@@ -164,54 +231,123 @@ export default function NewItemPage() {
       <form onSubmit={handleSubmit} className="space-y-6 bg-white p-5 sm:p-7 rounded-3xl border border-slate-200 shadow-xs">
         {/* Photos Upload / Selection Section */}
         <div className="space-y-3">
-          <label className="block text-sm font-bold text-slate-800">
-            Hình ảnh món đồ <span className="text-rose-500">*</span>
-          </label>
+          {/* Hidden HTML5 File Inputs */}
+          <input
+            type="file"
+            ref={galleryInputRef}
+            accept="image/*"
+            multiple
+            onChange={(e) => handleFilesSelected(e.target.files)}
+            className="hidden"
+          />
+          <input
+            type="file"
+            ref={cameraInputRef}
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => handleFilesSelected(e.target.files)}
+            className="hidden"
+          />
+
+          <div className="flex items-center justify-between">
+            <label className="block text-sm font-bold text-slate-800">
+              Hình ảnh món đồ <span className="text-rose-500">*</span>
+            </label>
+            <span className="text-xs text-slate-500 font-medium">
+              Đã chọn: <strong className="text-slate-800">{images.length}/6 ảnh</strong>
+            </span>
+          </div>
+
+          {/* Action Buttons: Camera & Gallery */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              disabled={isProcessingPhotos || images.length >= 6}
+              onClick={() => cameraInputRef.current?.click()}
+              className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-gradient-to-r from-[#0F5B4B] to-[#12705C] text-white text-xs sm:text-sm font-bold shadow-md shadow-[#0F5B4B]/20 hover:from-[#0A3F34] hover:to-[#0F5B4B] transition-all cursor-pointer disabled:opacity-50"
+            >
+              <Camera className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+              <span>Chụp ảnh bằng Camera (Điện thoại)</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isProcessingPhotos || images.length >= 6}
+              onClick={() => galleryInputRef.current?.click()}
+              className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-white border-2 border-[#0F5B4B] text-[#0F5B4B] text-xs sm:text-sm font-bold hover:bg-[#EAF7F2] transition-all cursor-pointer disabled:opacity-50"
+            >
+              <ImageIcon className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+              <span>Chọn từ Bộ sưu tập / Thư viện</span>
+            </button>
+          </div>
+
+          {/* Processing Spinner Banner */}
+          {isProcessingPhotos && (
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold animate-pulse">
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              <span>Đang xử lý và tối ưu hóa hình ảnh tải lên...</span>
+            </div>
+          )}
 
           {/* Selected photos thumbnail list */}
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5 pt-1">
             {images.map((img, idx) => (
-              <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden border border-slate-200 group bg-slate-50">
+              <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden border border-slate-200 group bg-slate-50 shadow-xs">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={img} alt="Ảnh xem trước" className="w-full h-full object-cover" />
                 <button
                   type="button"
                   onClick={() => handleRemoveImage(idx)}
-                  className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-rose-600 transition-colors cursor-pointer"
-                  title="Xóa ảnh"
+                  className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/65 text-white flex items-center justify-center hover:bg-rose-600 transition-colors cursor-pointer"
+                  title="Xóa ảnh này"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
                 {idx === 0 && (
-                  <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#0F5B4B] text-white">
+                  <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-[#0F5B4B] text-white shadow-xs">
                     Ảnh bìa
                   </span>
                 )}
               </div>
             ))}
 
-            {images.length < 5 && (
-              <div className="aspect-square rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 p-2 text-center hover:border-[#0F5B4B] hover:text-[#0F5B4B] transition-colors">
-                <Upload className="w-5 h-5 mb-1" />
-                <span className="text-[11px] font-medium leading-tight">Thêm ảnh</span>
-              </div>
+            {images.length < 6 && (
+              <button
+                type="button"
+                onClick={() => galleryInputRef.current?.click()}
+                disabled={isProcessingPhotos}
+                className="aspect-square rounded-2xl border-2 border-dashed border-slate-300 hover:border-[#0F5B4B] hover:bg-[#EAF7F2]/40 flex flex-col items-center justify-center text-slate-400 hover:text-[#0F5B4B] p-2 text-center transition-all cursor-pointer group"
+              >
+                <Plus className="w-5 h-5 mb-1 group-hover:scale-110 transition-transform" />
+                <span className="text-[11px] font-semibold leading-tight">Thêm ảnh</span>
+              </button>
             )}
           </div>
 
           {/* Quick preset sample buttons */}
-          <div className="pt-1">
-            <span className="text-xs text-slate-500 font-medium mr-2">Chọn nhanh ảnh mẫu thực tế:</span>
-            <div className="inline-flex flex-wrap gap-1.5 mt-1">
+          <div className="pt-2 border-t border-slate-100">
+            <span className="text-xs text-slate-500 font-medium mr-2">Hoặc chọn nhanh ảnh mẫu có sẵn:</span>
+            <div className="inline-flex flex-wrap gap-1.5 mt-1.5">
               {PRESET_SAMPLE_IMAGES.map((sample) => (
                 <button
                   key={sample.label}
                   type="button"
                   onClick={() => handleAddSampleImage(sample.url)}
-                  className="px-2.5 py-1 rounded-lg text-xs bg-slate-100 text-slate-700 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] border border-slate-200 transition-colors"
+                  disabled={images.length >= 6}
+                  className="px-2.5 py-1 rounded-lg text-xs bg-slate-100 text-slate-700 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] border border-slate-200 transition-colors cursor-pointer disabled:opacity-40"
                 >
                   + {sample.label}
                 </button>
               ))}
+              {images.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setImages([])}
+                  className="px-2.5 py-1 rounded-lg text-xs text-rose-600 hover:bg-rose-50 border border-rose-200 transition-colors cursor-pointer"
+                >
+                  Xóa tất cả ảnh
+                </button>
+              )}
             </div>
           </div>
         </div>

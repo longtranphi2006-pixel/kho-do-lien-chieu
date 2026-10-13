@@ -35,6 +35,7 @@ interface AppContextType {
     scheduledDate?: string;
   }) => Transaction;
   advanceTradeStatus: (transactionId: string, nextStatus: TradeStatus) => void;
+  confirmTradeHandover: (transactionId: string, role: 'giver' | 'receiver') => void;
   reviews: Review[];
   submitReview: (params: {
     transactionId: string;
@@ -431,6 +432,80 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const confirmTradeHandover = (transactionId: string, role: 'giver' | 'receiver') => {
+    let completedTrans: Transaction | null = null;
+
+    setTransactions((prev) =>
+      prev.map((t) => {
+        if (t.id !== transactionId) return t;
+        const isGiver = role === 'giver';
+        const updatedGiverConf = isGiver ? true : Boolean(t.giver_confirmed);
+        const updatedReceiverConf = !isGiver ? true : Boolean(t.receiver_confirmed);
+        const bothConfirmed = updatedGiverConf && updatedReceiverConf;
+
+        const updated: Transaction = {
+          ...t,
+          giver_confirmed: updatedGiverConf,
+          receiver_confirmed: updatedReceiverConf,
+          status: bothConfirmed ? 'COMPLETED' : t.status,
+          completed_at: bothConfirmed ? new Date().toISOString() : t.completed_at,
+        };
+
+        if (bothConfirmed) {
+          completedTrans = updated;
+        }
+        return updated;
+      })
+    );
+
+    if (completedTrans) {
+      const trans: Transaction = completedTrans;
+      updateItem(trans.item_id, { status: 'COMPLETED' });
+      setProfiles((prev) =>
+        prev.map((p) => {
+          if (p.id === trans.giver_id) {
+            return {
+              ...p,
+              items_given_count: p.items_given_count + 1,
+              completed_trades_count: p.completed_trades_count + 1,
+              reputation_score: p.reputation_score + 20,
+            };
+          }
+          if (p.id === trans.receiver_id) {
+            return {
+              ...p,
+              completed_trades_count: p.completed_trades_count + 1,
+              reputation_score: p.reputation_score + 10,
+            };
+          }
+          return p;
+        })
+      );
+
+      const giverNotif: NotificationItem = {
+        id: `notif-comp-giver-${Date.now()}`,
+        user_id: trans.giver_id,
+        title: 'Trao đồ thành công! (+20 điểm)',
+        content: `Cả hai bên đã xác nhận hoàn tất giao dịch. Bạn nhận được +20 điểm uy tín đóng góp.`,
+        is_read: false,
+        action_link: `/trades/${trans.id}/completed`,
+        type: 'trade',
+        created_at: new Date().toISOString(),
+      };
+      const receiverNotif: NotificationItem = {
+        id: `notif-comp-receiver-${Date.now()}`,
+        user_id: trans.receiver_id,
+        title: 'Nhận đồ thành công! (+10 điểm)',
+        content: `Cả hai bên đã xác nhận hoàn tất nhận món đồ. Bạn nhận được +10 điểm uy tín.`,
+        is_read: false,
+        action_link: `/trades/${trans.id}/completed`,
+        type: 'trade',
+        created_at: new Date().toISOString(),
+      };
+      setNotifications((prev) => [giverNotif, receiverNotif, ...prev]);
+    }
+  };
+
   const submitReview = (params: {
     transactionId: string;
     revieweeId: string;
@@ -507,6 +582,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         getTransactionById,
         createTradeRequest,
         advanceTradeStatus,
+        confirmTradeHandover,
         reviews,
         submitReview,
         notifications,
