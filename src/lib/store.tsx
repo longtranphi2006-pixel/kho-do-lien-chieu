@@ -284,13 +284,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
         }
 
-        // 3. Transactions merge
+        // 3. Transactions merge (with auto-healing for 2-way confirmed trades)
         if (transRes.data) {
-          const dbTrans = transRes.data as Transaction[];
+          const rawTrans = transRes.data as Transaction[];
+          const dbTrans = rawTrans.map((t) => {
+            if (t.giver_confirmed && t.receiver_confirmed && t.status !== 'COMPLETED') {
+              const compDate = t.completed_at || new Date().toISOString();
+              sb.from('transactions').update({ status: 'COMPLETED', completed_at: compDate }).eq('id', t.id).then(() => {});
+              sb.from('items').update({ status: 'COMPLETED' }).eq('id', t.item_id).then(() => {});
+              return { ...t, status: 'COMPLETED' as TradeStatus, completed_at: compDate };
+            }
+            return t;
+          });
           const dbTransIds = new Set(dbTrans.map((t) => t.id));
           setTransactions((prev) => {
             const pendingTrans = prev.filter((t) => !dbTransIds.has(t.id));
-            return [...pendingTrans, ...dbTrans];
+            const merged = [...pendingTrans, ...dbTrans];
+            try {
+              localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(merged));
+            } catch {}
+            return merged;
           });
         }
 
@@ -888,15 +901,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const confirmTradeHandover = (transactionId: string, role: 'giver' | 'receiver') => {
+  const confirmTradeHandover = async (transactionId: string, role: 'giver' | 'receiver') => {
     let completedTrans: Transaction | null = null;
     const isGiver = role === 'giver';
+
+    // Directly query database to see if the other user has already confirmed
+    let dbOtherConfirmed = false;
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: dbRow } = await supabase.from('transactions').select('*').eq('id', transactionId).maybeSingle();
+        if (dbRow) {
+          dbOtherConfirmed = isGiver ? Boolean(dbRow.receiver_confirmed) : Boolean(dbRow.giver_confirmed);
+        }
+      } catch (err) {
+        console.warn('Check DB transaction status error:', err);
+      }
+    }
 
     setTransactions((prev) =>
       prev.map((t) => {
         if (t.id !== transactionId) return t;
-        const updatedGiverConf = isGiver ? true : Boolean(t.giver_confirmed);
-        const updatedReceiverConf = !isGiver ? true : Boolean(t.receiver_confirmed);
+        const updatedGiverConf = isGiver ? true : Boolean(t.giver_confirmed) || dbOtherConfirmed;
+        const updatedReceiverConf = !isGiver ? true : Boolean(t.receiver_confirmed) || dbOtherConfirmed;
         const bothConfirmed = updatedGiverConf && updatedReceiverConf;
 
         const updated: Transaction = {
@@ -915,35 +941,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     if (isSupabaseConfigured() && supabase) {
-      supabase.from('transactions').update({
+      const isNowCompleted = Boolean(completedTrans) || dbOtherConfirmed;
+      const updates: any = {
         ...(isGiver ? { giver_confirmed: true } : { receiver_confirmed: true }),
-        ...(completedTrans ? { status: 'COMPLETED', completed_at: new Date().toISOString() } : {}),
-      }).eq('id', transactionId).then(() => {});
+        ...(isNowCompleted ? { status: 'COMPLETED', completed_at: new Date().toISOString() } : {}),
+      };
+      if (isNowCompleted) {
+        if (isGiver) updates.receiver_confirmed = true;
+        else updates.giver_confirmed = true;
+      }
+      supabase.from('transactions').update(updates).eq('id', transactionId).then(() => {});
     }
 
-    if (completedTrans) {
-      const trans: Transaction = completedTrans;
-      updateItem(trans.item_id, { status: 'COMPLETED' });
-      setProfiles((prev) =>
-        prev.map((p) => {
-          if (p.id === trans.giver_id) {
-            return {
-              ...p,
-              items_given_count: p.items_given_count + 1,
-              completed_trades_count: p.completed_trades_count + 1,
-              reputation_score: p.reputation_score + 20,
-            };
-          }
-          if (p.id === trans.receiver_id) {
-            return {
-              ...p,
-              completed_trades_count: p.completed_trades_count + 1,
-              reputation_score: p.reputation_score + 10,
-            };
-          }
-          return p;
-        })
-      );
+    if (completedTrans || dbOtherConfirmed) {
+      const trans: Transaction | undefined = completedTrans || transactions.find((t) => t.id === transactionId);
+      if (trans) {
+        updateItem(trans.item_id, { status: 'COMPLETED' });
+        setProfiles((prev) =>
+          prev.map((p) => {
+            if (p.id === trans.giver_id) {
+              return {
+                ...p,
+                items_given_count: p.items_given_count + 1,
+                completed_trades_count: p.completed_trades_count + 1,
+                reputation_score: p.reputation_score + 20,
+              };
+            }
+            if (p.id === trans.receiver_id) {
+              return {
+                ...p,
+                completed_trades_count: p.completed_trades_count + 1,
+                reputation_score: p.reputation_score + 10,
+              };
+            }
+            return p;
+          })
+        );
 
       const giverNotif: NotificationItem = {
         id: `notif-comp-giver-${Date.now()}`,
@@ -966,6 +999,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         created_at: new Date().toISOString(),
       };
       setNotifications((prev) => [giverNotif, receiverNotif, ...prev]);
+      }
     }
   };
 

@@ -91,10 +91,16 @@ function TradeStepperContent() {
     }
   };
 
-  const currentStepIndex = getStepIndex(status);
-
-  // If both have confirmed in HANDED_OVER state, automatically route to completed
   const bothConfirmed = Boolean(transaction.giver_confirmed && transaction.receiver_confirmed);
+  const isCompleted = status === 'COMPLETED' || bothConfirmed;
+  const currentStepIndex = isCompleted ? 3 : getStepIndex(status);
+
+  // Auto-advance trade to COMPLETED if both parties have confirmed
+  React.useEffect(() => {
+    if (bothConfirmed && status !== 'COMPLETED') {
+      advanceTradeStatus(transaction.id, 'COMPLETED');
+    }
+  }, [bothConfirmed, status, transaction.id, advanceTradeStatus]);
 
   const handleAdvance = (nextStatus: TradeStatus) => {
     setIsUpdating(true);
@@ -193,8 +199,8 @@ function TradeStepperContent() {
       <div className="bg-white p-5 sm:p-7 rounded-3xl border border-slate-200/90 shadow-xs">
         <div className="grid grid-cols-4 gap-2 relative">
           {steps.map((s, idx) => {
-            const isFinished = currentStepIndex > idx || status === 'COMPLETED';
-            const isCurrent = currentStepIndex === idx && status !== 'COMPLETED';
+            const isFinished = currentStepIndex > idx || isCompleted;
+            const isCurrent = currentStepIndex === idx && !isCompleted;
 
             return (
               <div key={s.id} className="flex flex-col items-center text-center relative z-10">
@@ -539,7 +545,7 @@ function TradeStepperContent() {
         )}
 
         {/* STEP 3: HANDED_OVER (Two-Way Confirmation per user request) */}
-        {status === 'HANDED_OVER' && (
+        {status === 'HANDED_OVER' && !isCompleted && (
           <div className="space-y-5">
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-700 flex items-start gap-2.5">
               <HelpCircle className="w-4 h-4 text-[#0F5B4B] shrink-0 mt-0.5" />
@@ -691,7 +697,7 @@ function TradeStepperContent() {
         )}
 
         {/* STEP 4: COMPLETED */}
-        {status === 'COMPLETED' && (
+        {isCompleted && (
           <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-3">
             <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto">
               <Check className="w-6 h-6 stroke-[3]" />
