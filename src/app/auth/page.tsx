@@ -22,6 +22,33 @@ import {
   UserPlus,
 } from 'lucide-react';
 
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
+
+const GOOGLE_CLIENT_ID =
+  process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
+  '358594784910-3t9jva017jp5pvp9865jibfngan4so4f.apps.googleusercontent.com';
+
+function parseJwt(token: string) {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      window
+        .atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload);
+  } catch {
+    return null;
+  }
+}
+
 export default function AuthPage() {
   const router = useRouter();
   const { allUsers, currentUser, login, loginWithOAuth, logout, registerUser } = useAppStore();
@@ -42,6 +69,56 @@ export default function AuthPage() {
   const [customOAuthMode, setCustomOAuthMode] = useState(false);
   const [customOAuthName, setCustomOAuthName] = useState('');
   const [customOAuthEmail, setCustomOAuthEmail] = useState('');
+
+  // Load Google Identity Services SDK
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const initGoogle = () => {
+      if (window.google?.accounts?.id) {
+        try {
+          window.google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: (response: any) => {
+              if (response?.credential) {
+                const payload = parseJwt(response.credential);
+                if (payload?.email) {
+                  loginWithOAuth({
+                    provider: 'Google',
+                    name: payload.name || payload.email.split('@')[0],
+                    email: payload.email,
+                    avatar_url:
+                      payload.picture ||
+                      'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
+                  });
+                  router.push('/');
+                }
+              }
+            },
+            auto_select: false,
+            cancel_on_tap_outside: true,
+          });
+
+          // Prompt Google One Tap popup if user is logged into Google
+          window.google.accounts.id.prompt();
+        } catch (e) {
+          console.warn('GSI init error:', e);
+        }
+      }
+    };
+
+    if (!document.getElementById('google-gsi-script')) {
+      const script = document.createElement('script');
+      script.id = 'google-gsi-script';
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = initGoogle;
+      document.body.appendChild(script);
+    } else if (window.google?.accounts) {
+      initGoogle();
+    }
+  }, [loginWithOAuth, router]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,6 +155,56 @@ export default function AuthPage() {
   };
 
   const handleOpenGoogle = async () => {
+    setIsLoading(true);
+
+    // 1. Try official Google OAuth2 Token Client (opens real Google login window)
+    if (typeof window !== 'undefined' && window.google?.accounts?.oauth2) {
+      try {
+        const tokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: GOOGLE_CLIENT_ID,
+          scope: 'openid profile email',
+          callback: async (tokenResponse: any) => {
+            if (tokenResponse?.error) {
+              console.warn('Google OAuth error:', tokenResponse.error);
+              setIsLoading(false);
+              setShowGoogleChooser(true);
+              return;
+            }
+            if (tokenResponse?.access_token) {
+              try {
+                const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+                });
+                const userInfo = await res.json();
+                if (userInfo?.email) {
+                  loginWithOAuth({
+                    provider: 'Google',
+                    name: userInfo.name || userInfo.email.split('@')[0],
+                    email: userInfo.email,
+                    avatar_url:
+                      userInfo.picture ||
+                      'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
+                  });
+                  setIsLoading(false);
+                  router.push('/');
+                  return;
+                }
+              } catch (err) {
+                console.warn('Failed to fetch Google profile:', err);
+              }
+            }
+            setIsLoading(false);
+            setShowGoogleChooser(true);
+          },
+        });
+        tokenClient.requestAccessToken();
+        return;
+      } catch (err) {
+        console.warn('Error launching Google Token Client:', err);
+      }
+    }
+
+    // 2. Try Supabase OAuth if configured
     if (isSupabaseConfigured() && supabase) {
       try {
         await supabase.auth.signInWithOAuth({
@@ -86,9 +213,12 @@ export default function AuthPage() {
         });
         return;
       } catch (err) {
-        console.warn('Supabase OAuth error, using Google Account Chooser:', err);
+        console.warn('Supabase OAuth error:', err);
       }
     }
+
+    // 3. Fallback to Google Chooser dialog
+    setIsLoading(false);
     setShowGoogleChooser(true);
     setCustomOAuthMode(false);
   };
