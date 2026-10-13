@@ -42,6 +42,8 @@ export interface Item {
   ai_moderation_score?: number;
   favorites_count: number;
   created_at: string;
+  donor_name?: string;
+  donor_avatar?: string;
   donor?: Profile;
 }
 

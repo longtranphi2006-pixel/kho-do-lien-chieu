@@ -15,7 +15,18 @@ interface ItemCardProps {
 export const ItemCard: React.FC<ItemCardProps> = ({ item, showAdminActions = false }) => {
   const { favorites, toggleFavorite, allUsers } = useAppStore();
   const isFavorited = favorites.includes(item.id);
-  const donor = item.donor || allUsers.find((u) => u.id === item.user_id);
+  const matchedUser = allUsers.find((u) => u.id === item.user_id);
+  const donor =
+    item.donor && item.donor.full_name !== 'Thành viên Liên Chiểu'
+      ? item.donor
+      : matchedUser && matchedUser.full_name !== 'Thành viên Liên Chiểu'
+      ? matchedUser
+      : item.donor || matchedUser;
+  const donorName =
+    (donor?.full_name && donor.full_name !== 'Thành viên Liên Chiểu' ? donor.full_name : item.donor_name) ||
+    donor?.full_name ||
+    'Người dùng';
+  const donorAvatar = donor?.avatar_url || item.donor_avatar;
 
   const handleFavoriteClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -128,20 +139,20 @@ export const ItemCard: React.FC<ItemCardProps> = ({ item, showAdminActions = fal
         {/* Donor footer */}
         <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
-            {donor?.avatar_url ? (
+            {donorAvatar ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={donor.avatar_url}
-                alt={donor.full_name}
+                src={donorAvatar}
+                alt={donorName}
                 className="w-6 h-6 rounded-full object-cover shrink-0 border border-slate-200"
               />
             ) : (
               <div className="w-6 h-6 rounded-full bg-[#EAF7F2] text-[#0F5B4B] text-[10px] font-bold flex items-center justify-center shrink-0">
-                {donor?.full_name?.charAt(0) || 'U'}
+                {donorName.charAt(0) || 'U'}
               </div>
             )}
             <span className="text-xs text-slate-700 font-medium truncate">
-              {donor?.full_name || 'Người dùng'}
+              {donorName}
             </span>
             {donor?.is_verified && (
               <span title="Đã xác thực sinh viên/cư dân">

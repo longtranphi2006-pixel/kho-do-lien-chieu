@@ -130,20 +130,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       let pObj: Partial<Profile> | undefined;
       if (typeof profileOrId === 'string') {
         const found = profiles.find((p) => p.id === profileOrId);
-        pObj = found || {
-          id: profileOrId,
-          full_name: 'Thành viên Liên Chiểu',
-          role: 'user',
-          is_verified: true,
-          reputation_score: 0,
-          items_given_count: 0,
-          completed_trades_count: 0,
-          created_at: new Date().toISOString(),
-        };
+        if (found && found.full_name && found.full_name !== 'Thành viên Liên Chiểu') {
+          pObj = found;
+        } else {
+          // Check DB first to avoid overwriting a real profile with a generic stub
+          const { data: dbUser } = await supabase.from('profiles').select('*').eq('id', profileOrId).maybeSingle();
+          if (dbUser && dbUser.full_name && dbUser.full_name !== 'Thành viên Liên Chiểu') {
+            // Found real profile in Supabase! Cache into local profiles
+            setProfiles((prev) => {
+              const existingIdx = prev.findIndex((p) => p.id === dbUser.id);
+              if (existingIdx >= 0) {
+                const copy = [...prev];
+                copy[existingIdx] = dbUser as Profile;
+                return copy;
+              }
+              return [...prev, dbUser as Profile];
+            });
+            return;
+          }
+          pObj = found || dbUser || {
+            id: profileOrId,
+            full_name: 'Thành viên Liên Chiểu',
+            role: 'user',
+            is_verified: true,
+            reputation_score: 50,
+            items_given_count: 0,
+            completed_trades_count: 0,
+            created_at: new Date().toISOString(),
+          };
+        }
       } else {
         pObj = profileOrId;
       }
-      if (!pObj.id) return;
+      if (!pObj || !pObj.id) return;
       await supabase.from('profiles').upsert({
         id: pObj.id,
         full_name: pObj.full_name || 'Thành viên Liên Chiểu',
@@ -154,7 +173,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         department: pObj.department,
         student_id: pObj.student_id,
         is_verified: pObj.is_verified ?? true,
-        reputation_score: pObj.reputation_score ?? 0,
+        reputation_score: pObj.reputation_score ?? 50,
         items_given_count: pObj.items_given_count ?? 0,
         completed_trades_count: pObj.completed_trades_count ?? 0,
         role: pObj.role || 'user',
@@ -545,16 +564,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const getItemById = (id: string): Item | undefined => {
     const item = items.find((i) => i.id === id);
     if (!item) return undefined;
-    const donor = profiles.find((p) => p.id === item.user_id);
+    let donor = profiles.find((p) => p.id === item.user_id);
+    if ((!donor || donor.full_name === 'Thành viên Liên Chiểu') && (item.donor || item.donor_name)) {
+      donor = item.donor || {
+        id: item.user_id,
+        full_name: item.donor_name || 'Người đăng',
+        avatar_url: item.donor_avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
+        university: 'Đại học Đà Nẵng',
+        is_verified: true,
+        reputation_score: 50,
+        items_given_count: 1,
+        completed_trades_count: 0,
+        role: 'user',
+        created_at: item.created_at,
+      };
+    }
     return { ...item, donor };
   };
 
   const addItem = (newItemData: Omit<Item, 'id' | 'created_at' | 'favorites_count'>): Item => {
+    const authorProfile = currentUser || profiles.find((p) => p.id === newItemData.user_id);
     const newItem: Item = {
       ...newItemData,
       id: `item-${Date.now()}`,
       created_at: new Date().toISOString(),
       favorites_count: 0,
+      donor_name: authorProfile?.full_name,
+      donor_avatar: authorProfile?.avatar_url,
+      donor: authorProfile || undefined,
     };
     setItems((prev) => [newItem, ...prev]);
 
@@ -577,7 +614,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const pushToSupabase = async () => {
         try {
           // 1. Ensure author profile is in profiles table first to satisfy foreign keys
-          await ensureProfileInSupabase(newItem.user_id);
+          await ensureProfileInSupabase(authorProfile || newItem.user_id);
 
           // 2. Upsert the item into items table
           const { error } = await sb.from('items').upsert({
@@ -686,9 +723,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const getTransactionById = (id: string): Transaction | undefined => {
     const t = transactions.find((item) => item.id === id);
     if (!t) return undefined;
-    const item = items.find((i) => i.id === t.item_id);
-    const giver = profiles.find((p) => p.id === t.giver_id);
-    const receiver = profiles.find((p) => p.id === t.receiver_id);
+    const item = getItemById(t.item_id);
+    let giver = profiles.find((p) => p.id === t.giver_id);
+    if ((!giver || giver.full_name === 'Thành viên Liên Chiểu') && currentUser?.id === t.giver_id) {
+      giver = currentUser;
+    } else if ((!giver || giver.full_name === 'Thành viên Liên Chiểu') && item?.donor) {
+      giver = item.donor;
+    }
+    let receiver = profiles.find((p) => p.id === t.receiver_id);
+    if ((!receiver || receiver.full_name === 'Thành viên Liên Chiểu') && currentUser?.id === t.receiver_id) {
+      receiver = currentUser;
+    }
     return { ...t, item, giver, receiver };
   };
 
@@ -698,7 +743,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     note?: string;
     scheduledDate?: string;
   }): Transaction => {
-    const targetItem = items.find((i) => i.id === params.itemId);
+    const targetItem = getItemById(params.itemId) || items.find((i) => i.id === params.itemId);
     if (!targetItem) throw new Error('Item not found');
 
     const receiverId = currentUser?.id || 'usr-an-bachkhoa';
@@ -723,8 +768,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const sb = supabase;
       const pushTrade = async () => {
         try {
-          await ensureProfileInSupabase(targetItem.user_id);
-          await ensureProfileInSupabase(receiverId);
+          await ensureProfileInSupabase(targetItem.donor || targetItem.user_id);
+          await ensureProfileInSupabase(currentUser || receiverId);
           await sb.from('transactions').upsert(newTransaction);
           await sb.from('items').update({ status: 'IN_PROGRESS' }).eq('id', params.itemId);
           await sb.from('notifications').upsert(donorNotif);

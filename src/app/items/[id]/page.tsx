@@ -218,23 +218,23 @@ function ItemDetailContent() {
               Thông tin người trao đồ
             </div>
             <div className="flex items-center gap-3.5">
-              {donor?.avatar_url ? (
+              {(donor?.avatar_url || item.donor_avatar) ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={donor.avatar_url}
-                  alt={donor.full_name}
+                  src={donor?.avatar_url || item.donor_avatar}
+                  alt={donor?.full_name || item.donor_name || 'Người trao đồ'}
                   className="w-12 h-12 rounded-full object-cover border border-[#0F5B4B]"
                 />
               ) : (
                 <div className="w-12 h-12 rounded-full bg-[#EAF7F2] text-[#0F5B4B] font-bold flex items-center justify-center">
-                  {donor?.full_name?.charAt(0) || 'U'}
+                  {(donor?.full_name || item.donor_name || 'U').charAt(0)}
                 </div>
               )}
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   <h4 className="font-bold text-slate-900 text-base truncate">
-                    {donor?.full_name}
+                    {donor?.full_name || item.donor_name || 'Người trao tặng'}
                   </h4>
                   {donor?.is_verified && (
                     <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0F5B4B] bg-[#EAF7F2] px-2 py-0.5 rounded-full border border-[#A7E2CB]">
@@ -244,22 +244,22 @@ function ItemDetailContent() {
                   )}
                 </div>
                 <p className="text-xs text-slate-500 truncate mt-0.5">
-                  {donor?.university} {donor?.department ? `• ${donor.department}` : ''}
+                  {donor?.university || 'Đại học Bách Khoa - ĐHĐN'} {donor?.department ? `• ${donor.department}` : ''}
                 </p>
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center text-xs">
               <div className="p-2 rounded-lg bg-slate-50">
-                <div className="font-bold text-[#0F5B4B] text-sm">{donor?.items_given_count || 0}</div>
+                <div className="font-bold text-[#0F5B4B] text-sm">{donor?.items_given_count ?? 1}</div>
                 <div className="text-slate-500 text-[10px]">Món đã trao</div>
               </div>
               <div className="p-2 rounded-lg bg-slate-50">
-                <div className="font-bold text-[#0F5B4B] text-sm">{donor?.completed_trades_count || 0}</div>
+                <div className="font-bold text-[#0F5B4B] text-sm">{donor?.completed_trades_count ?? 0}</div>
                 <div className="text-slate-500 text-[10px]">GD hoàn tất</div>
               </div>
               <div className="p-2 rounded-lg bg-slate-50">
-                <div className="font-bold text-[#0F5B4B] text-sm">⭐ {donor?.reputation_score || 100}</div>
+                <div className="font-bold text-[#0F5B4B] text-sm">⭐ {donor?.reputation_score ?? 50}</div>
                 <div className="text-slate-500 text-[10px]">Điểm uy tín</div>
               </div>
             </div>

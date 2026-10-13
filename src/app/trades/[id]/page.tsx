@@ -297,7 +297,7 @@ function TradeStepperContent() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <h4 className="font-bold text-slate-900 text-sm sm:text-base truncate">
-                  {giver?.full_name}
+                  {giver?.full_name || 'Người trao tặng'}
                 </h4>
                 {giver?.is_verified && (
                   <span title="Đã xác thực sinh viên">
@@ -306,14 +306,14 @@ function TradeStepperContent() {
                 )}
               </div>
               <p className="text-xs text-slate-500 truncate mt-0.5">
-                {giver?.university}
+                {giver?.university || 'Đại học Bách Khoa - ĐHĐN'}
               </p>
             </div>
           </div>
 
           <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span>Đã trao: <strong>{giver?.items_given_count || 12} món</strong></span>
-            <span>Uy tín: <strong>⭐ {giver?.reputation_score || 120}</strong></span>
+            <span>Đã trao: <strong>{giver?.items_given_count ?? 0} món</strong></span>
+            <span>Uy tín: <strong>⭐ {giver?.reputation_score ?? 50}</strong></span>
           </div>
         </div>
 
@@ -355,7 +355,7 @@ function TradeStepperContent() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <h4 className="font-bold text-slate-900 text-sm sm:text-base truncate">
-                  {receiver?.full_name}
+                  {receiver?.full_name || 'Người nhận'}
                 </h4>
                 {receiver?.is_verified && (
                   <span title="Đã xác thực sinh viên">
@@ -364,14 +364,14 @@ function TradeStepperContent() {
                 )}
               </div>
               <p className="text-xs text-slate-500 truncate mt-0.5">
-                {receiver?.university}
+                {receiver?.university || 'Sinh viên Liên Chiểu'}
               </p>
             </div>
           </div>
 
           <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span>Đã nhận: <strong>{receiver?.completed_trades_count || 5} món</strong></span>
-            <span>Uy tín: <strong>⭐ {receiver?.reputation_score || 80}</strong></span>
+            <span>Đã nhận: <strong>{receiver?.completed_trades_count ?? 0} món</strong></span>
+            <span>Uy tín: <strong>⭐ {receiver?.reputation_score ?? 50}</strong></span>
           </div>
         </div>
       </div>
