@@ -254,31 +254,7 @@ export const MOCK_ITEMS: Item[] = [
   },
 ];
 
-export const MOCK_TRANSACTIONS: Transaction[] = [
-  {
-    id: 'tr-001',
-    item_id: 'item-03',
-    giver_id: 'usr-quan-it',
-    receiver_id: 'usr-an-bachkhoa',
-    status: 'HANDED_OVER',
-    scheduled_date: '2026-10-13T16:30:00Z',
-    pickup_location: 'Cổng 1 Trường Đại học Bách khoa (54 Nguyễn Lương Bằng)',
-    note: 'Mình mặc áo khoác Bách Khoa xanh navy, hẹn bạn ở ghế đá cổng chính nhé.',
-    created_at: '2026-10-12T14:00:00Z',
-  },
-  {
-    id: 'tr-002',
-    item_id: 'item-07',
-    giver_id: 'usr-an-bachkhoa',
-    receiver_id: 'usr-mai-supham',
-    status: 'COMPLETED',
-    scheduled_date: '2026-10-06T17:00:00Z',
-    pickup_location: 'KTX DMC 579, P. Hòa Khánh Nam',
-    note: 'Đã trao ấm đun nước thành công, test hoạt động tốt.',
-    created_at: '2026-10-05T10:00:00Z',
-    completed_at: '2026-10-06T17:30:00Z',
-  },
-];
+export const MOCK_TRANSACTIONS: Transaction[] = [];
 
 export const MOCK_REVIEWS: Review[] = [
   {
@@ -303,33 +279,13 @@ export const MOCK_REVIEWS: Review[] = [
 
 export const MOCK_NOTIFICATIONS: NotificationItem[] = [
   {
-    id: 'notif-01',
-    user_id: 'usr-an-bachkhoa',
-    title: 'Đề nghị trao đổi mới!',
-    content: 'Bạn Lê Hoàng Quân đã gửi yêu cầu nhận món "Bàn học gấp gọn chân sắt cho phòng trọ".',
-    is_read: false,
-    action_link: '/trades/tr-001',
-    type: 'trade',
-    created_at: '2026-10-12T14:05:00Z',
-  },
-  {
-    id: 'notif-02',
-    user_id: 'usr-an-bachkhoa',
-    title: 'Giao dịch hoàn tất (+20 điểm)',
-    content: 'Bạn đã hoàn tất giao dịch món "Ấm đun nước siêu tốc inox 1.8L" và được cộng +20 điểm đóng góp cộng đồng!',
-    is_read: true,
-    action_link: '/trades/tr-002/completed',
-    type: 'review',
-    created_at: '2026-10-06T17:35:00Z',
-  },
-  {
     id: 'notif-03',
     user_id: 'usr-an-bachkhoa',
     title: 'Xác thực tài khoản thành công',
     content: 'Hồ sơ sinh viên Trường ĐH Bách Khoa - ĐHĐN của bạn đã được kiểm duyệt với huy hiệu Đã Xác Thực 🎓.',
     is_read: true,
     action_link: '/profile',
-    type: 'system',
-    created_at: '2026-09-02T10:00:00Z',
+    type: 'moderation',
+    created_at: '2026-10-01T08:00:00Z',
   },
 ];

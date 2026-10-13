@@ -96,7 +96,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (savedItems) setItems(JSON.parse(savedItems));
 
       const savedTrans = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-      if (savedTrans) setTransactions(JSON.parse(savedTrans));
+      if (savedTrans) {
+        const parsed = JSON.parse(savedTrans) as Transaction[];
+        const cleaned = parsed.filter((t) => t.id !== 'tr-001' && t.id !== 'tr-002');
+        setTransactions(cleaned);
+      }
 
       const savedReviews = localStorage.getItem(STORAGE_KEYS.REVIEWS);
       if (savedReviews) setReviews(JSON.parse(savedReviews));

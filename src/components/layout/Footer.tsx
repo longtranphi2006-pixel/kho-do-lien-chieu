@@ -74,8 +74,8 @@ export const Footer: React.FC = () => {
                 </Link>
               </li>
               <li>
-                <Link href="/trades/tr-001" className="hover:text-emerald-400 transition-colors">
-                  Quy trình Stepper Trao đổi
+                <Link href="/trades" className="hover:text-emerald-400 transition-colors">
+                  Tiến trình Trao đổi 4 bước
                 </Link>
               </li>
             </ul>

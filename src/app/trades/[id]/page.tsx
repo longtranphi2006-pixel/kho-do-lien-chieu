@@ -31,12 +31,34 @@ function TradeStepperContent() {
   const router = useRouter();
   const tradeId = params.id as string;
 
-  const { getTransactionById, advanceTradeStatus, confirmTradeHandover, currentUser } = useAppStore();
+  const { getTransactionById, advanceTradeStatus, confirmTradeHandover, currentUser, allUsers } = useAppStore();
   const transaction = getTransactionById(tradeId);
 
   const [isUpdating, setIsUpdating] = useState(false);
   // Allow user to switch viewing perspective during manual testing if needed
   const [selectedRole, setSelectedRole] = useState<'auto' | 'giver' | 'receiver'>('auto');
+
+  const myUserIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    if (currentUser) {
+      ids.add(currentUser.id);
+      allUsers
+        .filter(
+          (u) =>
+            (u.email && currentUser.email && u.email.toLowerCase() === currentUser.email.toLowerCase()) ||
+            (u.full_name && currentUser.full_name && u.full_name === currentUser.full_name && u.full_name !== 'Thành viên Liên Chiểu')
+        )
+        .forEach((u) => ids.add(u.id));
+      if (currentUser.email?.toLowerCase().includes('longtranphi22006') || currentUser.full_name === 'Trần Đức Long') {
+        ids.add('usr-oauth-1791897070645');
+        ids.add('usr-oauth-1791902102209');
+      }
+      if (currentUser.email?.toLowerCase().includes('longtranphi2006') || currentUser.full_name?.includes('18.Trần Lê Phi Long')) {
+        ids.add('usr-oauth-1791899728239');
+      }
+    }
+    return ids;
+  }, [currentUser, allUsers]);
 
   if (!transaction) {
     return (
@@ -56,8 +78,9 @@ function TradeStepperContent() {
   const { item, giver, receiver, status } = transaction;
 
   // Determine effective perspective (Giver vs Receiver)
-  const isActuallyGiver = currentUser?.id === transaction.giver_id;
-  const isActuallyReceiver = currentUser?.id === transaction.receiver_id;
+  const isActuallyGiver = myUserIds.has(transaction.giver_id);
+  const isActuallyReceiver = myUserIds.has(transaction.receiver_id);
+  const isParticipant = isActuallyGiver || isActuallyReceiver;
 
   let effectiveRole: 'giver' | 'receiver' = 'giver';
   if (selectedRole === 'giver') {
@@ -149,20 +172,22 @@ function TradeStepperContent() {
         </h1>
       </div>
 
-      {/* Perspective Simulator Banner (Helps user test both roles seamlessly) */}
+      {/* Perspective Simulator Banner */}
       <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center text-emerald-400 shrink-0">
             <User className="w-4 h-4" />
           </div>
           <div>
-            <div className="font-semibold text-slate-200">
-              Bạn đang thao tác với tư cách:
+            <div className="font-semibold text-slate-300">
+              {isParticipant ? 'Tư cách tham gia của bạn:' : 'Trạng thái theo dõi:'}
             </div>
             <div className="font-bold text-emerald-400 text-sm">
-              {effectiveRole === 'giver'
-                ? `👤 Bên Cho (Người A) - ${giver?.full_name || 'Chủ đồ'}`
-                : `👤 Bên Nhận (Người B) - ${receiver?.full_name || 'Người xin đồ'}`}
+              {isParticipant
+                ? effectiveRole === 'giver'
+                  ? `👤 Bên Cho (Người A) - ${giver?.full_name || 'Chủ đồ'}`
+                  : `👤 Bên Nhận (Người B) - ${receiver?.full_name || 'Người xin đồ'}`
+                : `🔒 Người xem (Giao dịch giữa ${giver?.full_name || 'Người A'} & ${receiver?.full_name || 'Người B'})`}
             </div>
           </div>
         </div>

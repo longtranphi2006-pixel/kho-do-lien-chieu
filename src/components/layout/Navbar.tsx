@@ -134,7 +134,7 @@ export const Navbar: React.FC = () => {
                 Kho đồ
               </Link>
               <Link
-                href="/trades/tr-001"
+                href="/trades"
                 className="px-3 py-2 rounded-lg text-sm font-medium text-slate-700 hover:text-[#0F5B4B] hover:bg-[#EAF7F2] transition-colors"
               >
                 Tiến trình trao đổi
