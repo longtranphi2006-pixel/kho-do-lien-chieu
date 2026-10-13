@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Profile, Item, Transaction, Review, NotificationItem, TradeStatus, ItemStatus } from '@/types';
 import { MOCK_PROFILES, MOCK_ITEMS, MOCK_TRANSACTIONS, MOCK_REVIEWS, MOCK_NOTIFICATIONS } from '@/lib/mock-data';
-import { isSupabaseConfigured } from '@/lib/supabase';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 interface AppContextType {
   currentUser: Profile | null;
@@ -123,6 +123,103 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [profiles, currentUserId, items, transactions, reviews, notifications, favorites, isInitialized]);
 
+  // Sync with Supabase PostgreSQL Cloud & Subscribe to Realtime Updates
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !supabase) return;
+    const sb = supabase;
+
+    let isMounted = true;
+
+    const syncFromSupabase = async () => {
+      try {
+        const [itemsRes, profilesRes, transRes, reviewsRes, notifsRes] = await Promise.all([
+          sb.from('items').select('*').order('created_at', { ascending: false }),
+          sb.from('profiles').select('*'),
+          sb.from('transactions').select('*').order('created_at', { ascending: false }),
+          sb.from('reviews').select('*').order('created_at', { ascending: false }),
+          sb.from('notifications').select('*').order('created_at', { ascending: false }),
+        ]);
+
+        if (!isMounted) return;
+
+        if (itemsRes.data && itemsRes.data.length > 0) {
+          setItems(itemsRes.data);
+        }
+        if (profilesRes.data && profilesRes.data.length > 0) {
+          setProfiles((prev) => {
+            const map = new Map(prev.map((p) => [p.id, p]));
+            profilesRes.data!.forEach((p: Profile) => map.set(p.id, p));
+            return Array.from(map.values());
+          });
+        }
+        if (transRes.data && transRes.data.length > 0) {
+          setTransactions(transRes.data);
+        }
+        if (reviewsRes.data && reviewsRes.data.length > 0) {
+          setReviews(reviewsRes.data);
+        }
+        if (notifsRes.data && notifsRes.data.length > 0) {
+          setNotifications(notifsRes.data);
+        }
+      } catch (err) {
+        console.warn('Supabase initial sync error:', err);
+      }
+    };
+
+    syncFromSupabase();
+
+    // Subscribe to Realtime table changes across devices
+    const channel = sb
+      .channel('kdlc-cross-device-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'items' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setItems((prev) => [payload.new as Item, ...prev.filter((i) => i.id !== payload.new.id)]);
+          } else if (payload.eventType === 'UPDATE') {
+            setItems((prev) => prev.map((i) => (i.id === payload.new.id ? (payload.new as Item) : i)));
+          } else if (payload.eventType === 'DELETE') {
+            setItems((prev) => prev.filter((i) => i.id !== payload.old.id));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'transactions' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setTransactions((prev) => [payload.new as Transaction, ...prev.filter((t) => t.id !== payload.new.id)]);
+          } else if (payload.eventType === 'UPDATE') {
+            setTransactions((prev) => prev.map((t) => (t.id === payload.new.id ? (payload.new as Transaction) : t)));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        (payload) => {
+          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+            setProfiles((prev) => {
+              const existingIdx = prev.findIndex((p) => p.id === payload.new.id);
+              if (existingIdx >= 0) {
+                const copy = [...prev];
+                copy[existingIdx] = payload.new as Profile;
+                return copy;
+              }
+              return [...prev, payload.new as Profile];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      sb.removeChannel(channel);
+    };
+  }, []);
+
   const currentUser = currentUserId ? profiles.find((p) => p.id === currentUserId) || null : null;
 
   const switchUser = (userId: string) => {
@@ -225,6 +322,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, newProfile.id);
     } catch {}
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('profiles').upsert(newProfile).then(() => {});
+    }
+
     return newProfile;
   };
 
@@ -264,6 +366,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setProfiles((prev) => [...prev, newProfile]);
     setCurrentUserId(newProfile.id);
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('profiles').upsert(newProfile).then(() => {});
+    }
+
     return newProfile;
   };
 
@@ -286,7 +393,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (newItem.status === 'PENDING_ADMIN') {
       const adminNotif: NotificationItem = {
         id: `notif-${Date.now()}`,
-        user_id: 'usr-admin-lienchieu',
+        user_id: 'usr-admin-bql',
         title: 'Mục đăng cần kiểm duyệt AI',
         content: `Món đồ "${newItem.title}" cần phê duyệt thủ công do cờ kiểm duyệt.`,
         is_read: false,
@@ -297,15 +404,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setNotifications((prev) => [adminNotif, ...prev]);
     }
 
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('items').insert({
+        id: newItem.id,
+        user_id: newItem.user_id,
+        title: newItem.title,
+        description: newItem.description,
+        category: newItem.category,
+        condition: newItem.condition,
+        purpose: newItem.purpose,
+        location: newItem.location,
+        images: newItem.images,
+        status: newItem.status,
+        ai_moderation_reason: newItem.ai_moderation_reason,
+        ai_moderation_score: newItem.ai_moderation_score,
+        favorites_count: 0,
+        created_at: newItem.created_at,
+      }).then(({ error }) => {
+        if (error) console.error('Supabase addItem error:', error);
+      });
+    }
+
     return newItem;
   };
 
   const updateItem = (id: string, updates: Partial<Item>) => {
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...updates } : item)));
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('items').update(updates).eq('id', id).then(() => {});
+    }
   };
 
   const deleteItem = (id: string) => {
     setItems((prev) => prev.filter((item) => item.id !== id));
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('items').delete().eq('id', id).then(() => {});
+    }
   };
 
   const approveItem = (id: string) => {
@@ -316,6 +452,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : item
       )
     );
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('items').update({
+        status: 'ACTIVE',
+        ai_moderation_reason: 'Quản trị viên đã phê duyệt công khai.',
+      }).eq('id', id).then(() => {});
+    }
   };
 
   const rejectItem = (id: string, reason = 'Vi phạm quy định phi thương mại hoặc an toàn cộng đồng') => {
@@ -326,18 +469,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : item
       )
     );
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('items').update({
+        status: 'REJECTED',
+        ai_moderation_reason: reason,
+      }).eq('id', id).then(() => {});
+    }
   };
 
   const toggleLockUser = (userId: string) => {
+    let nextLockedState = false;
     setProfiles((prev) => {
-      const updated = prev.map((u) =>
-        u.id === userId ? { ...u, is_locked: !u.is_locked } : u
-      );
+      const updated = prev.map((u) => {
+        if (u.id === userId) {
+          nextLockedState = !u.is_locked;
+          return { ...u, is_locked: nextLockedState };
+        }
+        return u;
+      });
       try {
         localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(updated));
       } catch {}
       return updated;
     });
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('profiles').update({ is_locked: nextLockedState }).eq('id', userId).then(() => {});
+    }
   };
 
   const getTransactionById = (id: string): Transaction | undefined => {
@@ -376,6 +535,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTransactions((prev) => [newTransaction, ...prev]);
     updateItem(params.itemId, { status: 'IN_PROGRESS' });
 
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('transactions').insert(newTransaction).then(({ error }) => {
+        if (error) console.error('Supabase createTradeRequest error:', error);
+      });
+      supabase.from('items').update({ status: 'IN_PROGRESS' }).eq('id', params.itemId).then(() => {});
+    }
+
     const donorNotif: NotificationItem = {
       id: `notif-${Date.now()}`,
       user_id: targetItem.user_id,
@@ -403,6 +569,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return updated;
       })
     );
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('transactions').update({
+        status: nextStatus,
+        completed_at: nextStatus === 'COMPLETED' ? new Date().toISOString() : undefined,
+      }).eq('id', transactionId).then(() => {});
+    }
 
     if (nextStatus === 'COMPLETED') {
       const trans = transactions.find((t) => t.id === transactionId);
@@ -434,11 +607,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const confirmTradeHandover = (transactionId: string, role: 'giver' | 'receiver') => {
     let completedTrans: Transaction | null = null;
+    const isGiver = role === 'giver';
 
     setTransactions((prev) =>
       prev.map((t) => {
         if (t.id !== transactionId) return t;
-        const isGiver = role === 'giver';
         const updatedGiverConf = isGiver ? true : Boolean(t.giver_confirmed);
         const updatedReceiverConf = !isGiver ? true : Boolean(t.receiver_confirmed);
         const bothConfirmed = updatedGiverConf && updatedReceiverConf;
@@ -457,6 +630,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return updated;
       })
     );
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('transactions').update({
+        ...(isGiver ? { giver_confirmed: true } : { receiver_confirmed: true }),
+        ...(completedTrans ? { status: 'COMPLETED', completed_at: new Date().toISOString() } : {}),
+      }).eq('id', transactionId).then(() => {});
+    }
 
     if (completedTrans) {
       const trans: Transaction = completedTrans;
@@ -526,6 +706,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setReviews((prev) => [newReview, ...prev]);
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('reviews').insert(newReview).then(() => {});
+    }
 
     const notif: NotificationItem = {
       id: `notif-${Date.now()}`,
