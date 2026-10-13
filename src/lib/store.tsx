@@ -10,6 +10,7 @@ interface AppContextType {
   allUsers: Profile[];
   switchUser: (userId: string) => void;
   login: (identifier: string) => boolean;
+  loginWithOAuth: (params: { provider: string; email: string; name: string; avatar_url?: string }) => Profile;
   logout: () => void;
   registerUser: (userData: {
     full_name: string;
@@ -153,7 +154,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       university: 'Trường Đại học Bách khoa - ĐHĐN',
       department: 'Sinh viên Liên Chiểu',
       is_verified: true,
-      reputation_score: 100,
+      reputation_score: 0,
       items_given_count: 0,
       completed_trades_count: 0,
       role: clean.includes('admin') ? 'admin' : 'user',
@@ -163,6 +164,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProfiles((prev) => [...prev, newProfile]);
     setCurrentUserId(newProfile.id);
     return true;
+  };
+
+  const loginWithOAuth = (params: {
+    provider: string;
+    email: string;
+    name: string;
+    avatar_url?: string;
+  }): Profile => {
+    const cleanEmail = params.email.trim().toLowerCase();
+    const existing = profiles.find((p) => p.email && p.email.toLowerCase() === cleanEmail);
+
+    if (existing) {
+      setCurrentUserId(existing.id);
+      return existing;
+    }
+
+    const newProfile: Profile = {
+      id: `usr-oauth-${Date.now()}`,
+      full_name: params.name || (cleanEmail.includes('@') ? cleanEmail.split('@')[0] : 'Người dùng Google'),
+      avatar_url:
+        params.avatar_url ||
+        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
+      email: cleanEmail,
+      university: 'Đại học Đà Nẵng',
+      department: 'Sinh viên xác thực qua ' + params.provider,
+      is_verified: true,
+      reputation_score: 0,
+      items_given_count: 0,
+      completed_trades_count: 0,
+      role: cleanEmail.includes('admin') ? 'admin' : 'user',
+      created_at: new Date().toISOString(),
+    };
+
+    setProfiles((prev) => [...prev, newProfile]);
+    setCurrentUserId(newProfile.id);
+    return newProfile;
   };
 
   const logout = () => {
@@ -192,7 +229,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       department: userData.department,
       student_id: userData.student_id,
       is_verified: true,
-      reputation_score: 100,
+      reputation_score: 0,
       items_given_count: 0,
       completed_trades_count: 0,
       role: 'user',
@@ -419,6 +456,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         allUsers: profiles,
         switchUser,
         login,
+        loginWithOAuth,
         logout,
         registerUser,
         items,

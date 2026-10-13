@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   department TEXT,
   student_id TEXT,
   is_verified BOOLEAN DEFAULT false,
-  reputation_score INT DEFAULT 100,
+  reputation_score INT DEFAULT 0,
   items_given_count INT DEFAULT 0,
   completed_trades_count INT DEFAULT 0,
   role user_role_enum DEFAULT 'user',
@@ -132,7 +132,7 @@ BEGIN
     COALESCE(new.raw_user_meta_data->>'university', 'Trường Đại học Bách khoa - ĐHĐN'),
     COALESCE(new.raw_user_meta_data->>'department', 'Khoa Quản lý Công nghiệp'),
     true,
-    100,
+    0,
     COALESCE((new.raw_user_meta_data->>'role')::user_role_enum, 'user')
   );
   RETURN new;
