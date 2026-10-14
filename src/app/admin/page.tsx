@@ -6,8 +6,10 @@ import { useSearchParams } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
 import {
   Item,
+  ItemStatus,
   Profile,
   Transaction,
+  TradeStatus,
   ModerationResult,
   ReportItem,
   ReportTargetType,
@@ -85,8 +87,14 @@ function AdminDashboardPageContent() {
     adminRestoreItem,
     cancelTrade,
     restoreTrade,
+    deletedItemIds,
     isSupabaseMode,
   } = useAppStore();
+
+  // Optimistic UI state for 0ms instant response on Admin actions
+  const [optimisticItemStatus, setOptimisticItemStatus] = useState<Record<string, ItemStatus | 'DELETED'>>({});
+  const [optimisticTradeStatus, setOptimisticTradeStatus] = useState<Record<string, TradeStatus>>({});
+  const [, setActionProcessing] = useState<Record<string, boolean>>({});
 
   const [userToLock, setUserToLock] = useState<Profile | null>(null);
   const [isLockModalOpen, setIsLockModalOpen] = useState(false);
@@ -239,7 +247,9 @@ function AdminDashboardPageContent() {
 
   // Filtered Listings
   const filteredListings = items.filter((item) => {
-    if (statusFilter !== 'ALL' && item.status !== statusFilter) return false;
+    if (deletedItemIds.has(item.id) || optimisticItemStatus[item.id] === 'DELETED') return false;
+    const currentStatus = optimisticItemStatus[item.id] || item.status;
+    if (statusFilter !== 'ALL' && currentStatus !== statusFilter) return false;
     if (itemSearch.trim()) {
       const q = itemSearch.toLowerCase();
       return (
@@ -859,19 +869,24 @@ function AdminDashboardPageContent() {
                       </td>
                       <td className="p-3 text-slate-600">{it.donor?.full_name || 'Sinh viên'}</td>
                       <td className="p-3">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            it.status === 'ACTIVE'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : it.status === 'PENDING_ADMIN'
-                              ? 'bg-amber-100 text-amber-800'
-                              : it.status === 'HIDDEN'
-                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                              : 'bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          {it.status === 'HIDDEN' ? '🔒 Đóng băng' : it.status}
-                        </span>
+                        {(() => {
+                          const itemStatus = optimisticItemStatus[it.id] || it.status;
+                          return (
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                itemStatus === 'ACTIVE'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : itemStatus === 'PENDING_ADMIN'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : itemStatus === 'HIDDEN'
+                                  ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                  : 'bg-slate-100 text-slate-700'
+                              }`}
+                            >
+                              {itemStatus === 'HIDDEN' ? '🔒 Đóng băng' : itemStatus}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="p-3 text-right space-x-1 whitespace-nowrap">
                         <button
@@ -888,18 +903,24 @@ function AdminDashboardPageContent() {
                             Duyệt
                           </button>
                         )}
-                        {it.status === 'HIDDEN' ? (
+                        {(optimisticItemStatus[it.id] || it.status) === 'HIDDEN' ? (
                           <button
-                            onClick={() => adminRestoreItem(it.id)}
-                            className="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-800 hover:bg-emerald-200 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
+                            onClick={() => {
+                              setOptimisticItemStatus((prev) => ({ ...prev, [it.id]: 'ACTIVE' }));
+                              adminRestoreItem(it.id);
+                            }}
+                            className="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-800 hover:bg-emerald-200 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 active:scale-95"
                             title="Mở khóa đóng băng để món đồ trở lại kho đồ công khai"
                           >
                             <Eye className="w-3 h-3" /> Mở đóng băng
                           </button>
                         ) : (
                           <button
-                            onClick={() => adminHideItem(it.id)}
-                            className="px-2 py-1 rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
+                            onClick={() => {
+                              setOptimisticItemStatus((prev) => ({ ...prev, [it.id]: 'HIDDEN' }));
+                              adminHideItem(it.id);
+                            }}
+                            className="px-2 py-1 rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 active:scale-95"
                             title="Đóng băng tạm khóa món đồ này"
                           >
                             <EyeOff className="w-3 h-3" /> Đóng băng
@@ -908,10 +929,11 @@ function AdminDashboardPageContent() {
                         <button
                           onClick={() => {
                             if (confirm(`Bạn có chắc chắn muốn xóa hoàn toàn món đồ "${it.title}" khỏi kho đồ? Món đồ sẽ biến mất vĩnh viễn khỏi toàn bộ hệ thống.`)) {
+                              setOptimisticItemStatus((prev) => ({ ...prev, [it.id]: 'DELETED' }));
                               deleteItem(it.id);
                             }
                           }}
-                          className="px-2 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
+                          className="px-2 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 active:scale-95"
                           title="Xóa hoàn toàn món đồ khỏi kho"
                         >
                           <Trash2 className="w-3 h-3" /> Xóa hoàn toàn
@@ -1094,46 +1116,59 @@ function AdminDashboardPageContent() {
                         {tr.pickup_location || 'Cổng trường'}
                       </td>
                       <td className="p-3">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            tr.status === 'COMPLETED'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : tr.status === 'CANCELLED'
-                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          {tr.status === 'CANCELLED' ? '🔒 Đã khóa GD' : tr.status}
-                        </span>
+                        {(() => {
+                          const tradeStatus = optimisticTradeStatus[tr.id] || tr.status;
+                          return (
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                tradeStatus === 'COMPLETED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : tradeStatus === 'CANCELLED'
+                                  ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {tradeStatus === 'CANCELLED' ? '🔒 Đã khóa GD' : tradeStatus}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
-                        {tr.status !== 'CANCELLED' && tr.status !== 'COMPLETED' ? (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (confirm(`Khóa giao dịch #${tr.id} và hoàn trả món đồ về trạng thái ban đầu (như lúc mới đăng)?`)) {
-                                await cancelTrade(tr.id, 'Khóa bởi Admin');
-                              }
-                            }}
-                            className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
-                            title="Khóa giao dịch và đưa món đồ về ban đầu"
-                          >
-                            <Lock className="w-3 h-3" /> Khóa GD
-                          </button>
-                        ) : tr.status === 'CANCELLED' ? (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (confirm(`Mở lại phiên giao dịch #${tr.id}?`)) {
-                                await restoreTrade(tr.id);
-                              }
-                            }}
-                            className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
-                            title="Mở lại phiên giao dịch"
-                          >
-                            <Unlock className="w-3 h-3" /> Mở lại GD
-                          </button>
-                        ) : null}
+                        {(() => {
+                          const tradeStatus = optimisticTradeStatus[tr.id] || tr.status;
+                          return tradeStatus !== 'CANCELLED' && tradeStatus !== 'COMPLETED' ? (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (confirm(`Khóa giao dịch #${tr.id} và hoàn trả món đồ về trạng thái ban đầu (như lúc mới đăng)?`)) {
+                                  setOptimisticTradeStatus((prev) => ({ ...prev, [tr.id]: 'CANCELLED' }));
+                                  if (tr.item_id) {
+                                    setOptimisticItemStatus((prev) => ({ ...prev, [tr.item_id]: 'ACTIVE' }));
+                                  }
+                                  await cancelTrade(tr.id, 'Khóa bởi Admin');
+                                }
+                              }}
+                              className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 active:scale-95"
+                              title="Khóa giao dịch và đưa món đồ về ban đầu"
+                            >
+                              <Lock className="w-3 h-3" /> Khóa GD
+                            </button>
+                          ) : tradeStatus === 'CANCELLED' ? (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (confirm(`Mở lại phiên giao dịch #${tr.id}?`)) {
+                                  setOptimisticTradeStatus((prev) => ({ ...prev, [tr.id]: 'ACCEPTED' }));
+                                  await restoreTrade(tr.id);
+                                }
+                              }}
+                              className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 active:scale-95"
+                              title="Mở lại phiên giao dịch"
+                            >
+                              <Unlock className="w-3 h-3" /> Mở lại GD
+                            </button>
+                          ) : null;
+                        })()}
                         <Link
                           href={`/trades/${tr.id}`}
                           className="text-[#0F5B4B] font-bold hover:underline inline-block px-1"
@@ -1300,8 +1335,21 @@ function AdminDashboardPageContent() {
                 const currentTrade = actualTradeId ? (transactions.find((t) => t.id === actualTradeId) || targetTrade) : targetTrade;
                 const actualItemId = resolvedTargetItem?.id || currentTrade?.item_id || targetTrade?.item_id || (report.target_type === 'ITEM' ? report.target_id : undefined);
                 const itm = actualItemId ? (items.find((i) => i.id === actualItemId) || resolvedTargetItem) : null;
-                const isItemHidden = itm?.status === 'HIDDEN';
-                const isTradeCancelled = currentTrade ? currentTrade.status === 'CANCELLED' : false;
+
+                // 0ms Optimistic status determination
+                const isItemDeleted = Boolean(
+                  actualItemId && (deletedItemIds.has(actualItemId) || optimisticItemStatus[actualItemId] === 'DELETED')
+                );
+                const effectiveItemStatus = actualItemId
+                  ? (optimisticItemStatus[actualItemId] || itm?.status || (isItemDeleted ? 'DELETED' : 'ACTIVE'))
+                  : itm?.status;
+                const isItemHidden = effectiveItemStatus === 'HIDDEN';
+
+                const isTradeCancelled = Boolean(
+                  actualTradeId &&
+                    (optimisticTradeStatus[actualTradeId] === 'CANCELLED' ||
+                      (currentTrade?.status === 'CANCELLED' && optimisticTradeStatus[actualTradeId] !== 'ACCEPTED'))
+                );
 
                 const targetUser = allUsers.find(
                   (u) =>
@@ -1426,37 +1474,64 @@ function AdminDashboardPageContent() {
 
                               <div className="space-y-3">
                                 {/* Actions for Item */}
-                                {(report.target_type === 'ITEM' || resolvedTargetItem || targetTrade?.item_id) && (
+                                {(report.target_type === 'ITEM' || resolvedTargetItem || targetTrade?.item_id) && actualItemId && (
                                   <div className="space-y-1.5 pb-2.5 border-b border-slate-200/80">
-                                    <div className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                                      <Tag className="w-3 h-3 text-[#0F5B4B]" /> Món đồ / Bài viết liên quan:
-                                    </div>
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {(resolvedTargetItem || targetTrade?.item_id) && (
-                                        <Link
-                                          href={`/items/${resolvedTargetItem?.id || targetTrade?.item_id}`}
-                                          target="_blank"
-                                          className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold flex items-center gap-1 shadow-2xs"
-                                        >
-                                          <ExternalLink className="w-3 h-3" /> Xem bài viết
-                                        </Link>
+                                    <div className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                                      <span className="flex items-center gap-1">
+                                        <Tag className="w-3 h-3 text-[#0F5B4B]" /> Món đồ / Bài viết liên quan:
+                                      </span>
+                                      {isItemDeleted && (
+                                        <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                                          Đã xóa hoàn toàn
+                                        </span>
                                       )}
+                                      {!isItemDeleted && isItemHidden && (
+                                        <span className="text-[10px] text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                          Đang đóng băng
+                                        </span>
+                                      )}
+                                    </div>
 
-                                      {(() => {
-                                        if (!actualItemId) return null;
+                                    {isItemDeleted ? (
+                                      <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-xs text-slate-600 font-medium flex items-center gap-2">
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                        <span>Món đồ đã được <strong>xóa hoàn toàn</strong> khỏi kho đồ (Vĩnh viễn).</span>
+                                      </div>
+                                    ) : (
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {(resolvedTargetItem || targetTrade?.item_id || itm) && (
+                                          <Link
+                                            href={`/items/${resolvedTargetItem?.id || targetTrade?.item_id || itm?.id || actualItemId}`}
+                                            target="_blank"
+                                            className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold flex items-center gap-1 shadow-2xs"
+                                          >
+                                            <ExternalLink className="w-3 h-3" /> Xem bài viết
+                                          </Link>
+                                        )}
 
-                                        return isItemHidden ? (
+                                        {isItemHidden ? (
                                           <button
                                             type="button"
                                             onClick={async () => {
+                                              if (!actualItemId) return;
+                                              // 0ms Optimistic UI update
+                                              setOptimisticItemStatus((prev) => ({ ...prev, [actualItemId]: 'ACTIVE' }));
+                                              setReportActionMsg(`Đã mở lại sản phẩm "${itm?.title || actualItemId}" lên kho đồ.`);
+                                              setActionProcessing((prev) => ({ ...prev, ['freeze_' + actualItemId]: true }));
                                               try {
                                                 await adminRestoreItem(actualItemId);
-                                                setReportActionMsg(`Đã mở lại sản phẩm "${itm?.title || actualItemId}" lên kho đồ.`);
                                               } catch (err: any) {
+                                                setOptimisticItemStatus((prev) => {
+                                                  const copy = { ...prev };
+                                                  delete copy[actualItemId];
+                                                  return copy;
+                                                });
                                                 alert('Lỗi: ' + (err?.message || 'Không thể mở lại'));
+                                              } finally {
+                                                setActionProcessing((prev) => ({ ...prev, ['freeze_' + actualItemId]: false }));
                                               }
                                             }}
-                                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs transition-all active:scale-95"
                                             title="Mở đóng băng để sản phẩm quay lại kho đồ"
                                           >
                                             <Eye className="w-3.5 h-3.5" /> Mở lại sản phẩm (Mở đóng băng)
@@ -1465,109 +1540,152 @@ function AdminDashboardPageContent() {
                                           <button
                                             type="button"
                                             onClick={async () => {
+                                              if (!actualItemId) return;
+                                              // 0ms Optimistic UI update
+                                              setOptimisticItemStatus((prev) => ({ ...prev, [actualItemId]: 'HIDDEN' }));
+                                              setReportActionMsg(`Đã đóng băng tạm khóa món đồ "${itm?.title || actualItemId}".`);
+                                              setActionProcessing((prev) => ({ ...prev, ['freeze_' + actualItemId]: true }));
                                               try {
                                                 await adminHideItem(actualItemId);
-                                                setReportActionMsg(`Đã đóng băng tạm khóa món đồ "${itm?.title || actualItemId}".`);
                                               } catch (err: any) {
+                                                setOptimisticItemStatus((prev) => {
+                                                  const copy = { ...prev };
+                                                  delete copy[actualItemId];
+                                                  return copy;
+                                                });
                                                 alert('Lỗi: ' + (err?.message || 'Không thể đóng băng'));
+                                              } finally {
+                                                setActionProcessing((prev) => ({ ...prev, ['freeze_' + actualItemId]: false }));
                                               }
                                             }}
-                                            className="px-2.5 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                                            className="px-2.5 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs transition-all active:scale-95"
                                             title="Đóng băng món đồ này khỏi kho đồ"
                                           >
                                             <EyeOff className="w-3.5 h-3.5" /> Đóng băng món đồ (Tạm khóa)
                                           </button>
-                                        );
-                                      })()}
+                                        )}
 
-                                      <button
-                                        type="button"
-                                        onClick={async () => {
-                                          if (!actualItemId) {
-                                            alert('Không tìm thấy mã món đồ để xóa.');
-                                            return;
-                                          }
-                                          const itemTitle = itm?.title || actualItemId;
-                                          if (confirm(`Bạn có chắc chắn muốn xóa hoàn toàn món đồ "${itemTitle}" khỏi kho đồ? Món đồ sẽ biến mất vĩnh viễn khỏi toàn bộ hệ thống.`)) {
-                                            try {
-                                              await deleteItem(actualItemId);
-                                              setReportActionMsg(`Đã xóa hoàn toàn món đồ "${itemTitle}" khỏi kho đồ.`);
-                                            } catch (err: any) {
-                                              alert('Lỗi khi xóa bài: ' + (err?.message || 'Không thể thực hiện'));
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            if (!actualItemId) {
+                                              alert('Không tìm thấy mã món đồ để xóa.');
+                                              return;
                                             }
-                                          }
-                                        }}
-                                        className="px-2.5 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
-                                        title="Xóa vĩnh viễn khỏi kho đồ"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" /> Xóa hoàn toàn khỏi kho đồ
-                                      </button>
-                                    </div>
+                                            const itemTitle = itm?.title || actualItemId;
+                                            if (confirm(`Bạn có chắc chắn muốn xóa hoàn toàn món đồ "${itemTitle}" khỏi kho đồ? Món đồ sẽ biến mất vĩnh viễn khỏi toàn bộ hệ thống.`)) {
+                                              // 0ms Optimistic UI update
+                                              setOptimisticItemStatus((prev) => ({ ...prev, [actualItemId]: 'DELETED' }));
+                                              setReportActionMsg(`Đã xóa hoàn toàn món đồ "${itemTitle}" khỏi kho đồ.`);
+                                              setActionProcessing((prev) => ({ ...prev, ['del_' + actualItemId]: true }));
+                                              try {
+                                                await deleteItem(actualItemId);
+                                              } catch (err: any) {
+                                                setOptimisticItemStatus((prev) => {
+                                                  const copy = { ...prev };
+                                                  delete copy[actualItemId];
+                                                  return copy;
+                                                });
+                                                alert('Lỗi khi xóa bài: ' + (err?.message || 'Không thể thực hiện'));
+                                              } finally {
+                                                setActionProcessing((prev) => ({ ...prev, ['del_' + actualItemId]: false }));
+                                              }
+                                            }
+                                          }}
+                                          className="px-2.5 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs transition-all active:scale-95"
+                                          title="Xóa vĩnh viễn khỏi kho đồ"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" /> Xóa hoàn toàn khỏi kho đồ
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
 
                                 {/* Actions for Trade */}
                                 {(actualTradeId || report.target_type === 'TRADE' || report.target_type === 'MESSAGE' || targetTrade) && (
                                   <div className="space-y-1.5 pb-2.5 border-b border-slate-200/80">
-                                    <div className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                                      <Repeat className="w-3 h-3 text-[#0F5B4B]" /> Phiên giao dịch liên quan:
+                                    <div className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                                      <span className="flex items-center gap-1">
+                                        <Repeat className="w-3 h-3 text-[#0F5B4B]" /> Phiên giao dịch liên quan:
+                                      </span>
+                                      {isTradeCancelled && (
+                                        <span className="text-[10px] text-rose-700 font-bold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                                          Đang bị khóa
+                                        </span>
+                                      )}
                                     </div>
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {(() => {
-                                        if (!actualTradeId) return null;
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      {actualTradeId && (
+                                        <Link
+                                          href={`/trades/${actualTradeId}`}
+                                          target="_blank"
+                                          className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold flex items-center gap-1 shadow-2xs"
+                                        >
+                                          <ExternalLink className="w-3 h-3" /> Vào phòng giao dịch (#{actualTradeId})
+                                        </Link>
+                                      )}
 
-                                        const isCancelled = isTradeCancelled;
-
-                                        return (
-                                          <>
-                                            <Link
-                                              href={`/trades/${actualTradeId}`}
-                                              target="_blank"
-                                              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold flex items-center gap-1 shadow-2xs"
-                                            >
-                                              <ExternalLink className="w-3 h-3" /> Vào phòng giao dịch (#{actualTradeId})
-                                            </Link>
-
-                                            {isCancelled ? (
-                                              <button
-                                                type="button"
-                                                onClick={async () => {
-                                                  if (confirm(`Mở lại phiên giao dịch #${actualTradeId}?`)) {
-                                                    try {
-                                                      await restoreTrade(actualTradeId);
-                                                      setReportActionMsg(`Đã mở lại phiên giao dịch #${actualTradeId}.`);
-                                                    } catch (err: any) {
-                                                      alert('Lỗi khi mở lại: ' + (err?.message || 'Không thể thực hiện'));
-                                                    }
-                                                  }
-                                                }}
-                                                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
-                                                title="Mở lại phiên giao dịch"
-                                              >
-                                                <Unlock className="w-3.5 h-3.5" /> Mở lại giao dịch
-                                              </button>
-                                            ) : (
-                                              <button
-                                                type="button"
-                                                onClick={async () => {
-                                                  if (confirm(`Bạn có chắc muốn KHÓA giao dịch #${actualTradeId} và đưa trạng thái món đồ về ban đầu (như lúc mới đăng)?`)) {
-                                                    try {
-                                                      await cancelTrade(actualTradeId, 'Admin khóa giao dịch do vi phạm quy tắc cộng đồng');
-                                                      setReportActionMsg(`Đã khóa giao dịch #${actualTradeId} và đưa món đồ về trạng thái ban đầu.`);
-                                                    } catch (err: any) {
-                                                      alert('Lỗi khi khóa giao dịch: ' + (err?.message || 'Không thể thực hiện'));
-                                                    }
-                                                  }
-                                                }}
-                                                className="px-2.5 py-1.5 rounded-lg bg-rose-700 text-white hover:bg-rose-800 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
-                                                title="Khóa giao dịch và đưa trạng thái món đồ về ban đầu"
-                                              >
-                                                <Lock className="w-3.5 h-3.5" /> Khóa giao dịch & Trả về kho
-                                              </button>
-                                            )}
-                                          </>
-                                        );
-                                      })()}
+                                      {actualTradeId && (isTradeCancelled ? (
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            if (confirm(`Mở lại phiên giao dịch #${actualTradeId}?`)) {
+                                              // 0ms Optimistic UI update
+                                              setOptimisticTradeStatus((prev) => ({ ...prev, [actualTradeId]: 'ACCEPTED' }));
+                                              setReportActionMsg(`Đã mở lại phiên giao dịch #${actualTradeId}.`);
+                                              setActionProcessing((prev) => ({ ...prev, ['trade_' + actualTradeId]: true }));
+                                              try {
+                                                await restoreTrade(actualTradeId);
+                                              } catch (err: any) {
+                                                setOptimisticTradeStatus((prev) => {
+                                                  const copy = { ...prev };
+                                                  delete copy[actualTradeId];
+                                                  return copy;
+                                                });
+                                                alert('Lỗi khi mở lại: ' + (err?.message || 'Không thể thực hiện'));
+                                              } finally {
+                                                setActionProcessing((prev) => ({ ...prev, ['trade_' + actualTradeId]: false }));
+                                              }
+                                            }
+                                          }}
+                                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs transition-all active:scale-95"
+                                          title="Mở lại phiên giao dịch"
+                                        >
+                                          <Unlock className="w-3.5 h-3.5" /> Mở lại giao dịch
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            if (confirm(`Bạn có chắc muốn KHÓA giao dịch #${actualTradeId} và đưa trạng thái món đồ về ban đầu (như lúc mới đăng)?`)) {
+                                              // 0ms Optimistic UI update
+                                              setOptimisticTradeStatus((prev) => ({ ...prev, [actualTradeId]: 'CANCELLED' }));
+                                              if (actualItemId) {
+                                                setOptimisticItemStatus((prev) => ({ ...prev, [actualItemId]: 'ACTIVE' }));
+                                              }
+                                              setReportActionMsg(`Đã khóa giao dịch #${actualTradeId} và đưa món đồ về trạng thái ban đầu.`);
+                                              setActionProcessing((prev) => ({ ...prev, ['trade_' + actualTradeId]: true }));
+                                              try {
+                                                await cancelTrade(actualTradeId, 'Admin khóa giao dịch do vi phạm quy tắc cộng đồng');
+                                              } catch (err: any) {
+                                                setOptimisticTradeStatus((prev) => {
+                                                  const copy = { ...prev };
+                                                  delete copy[actualTradeId];
+                                                  return copy;
+                                                });
+                                                alert('Lỗi khi khóa giao dịch: ' + (err?.message || 'Không thể thực hiện'));
+                                              } finally {
+                                                setActionProcessing((prev) => ({ ...prev, ['trade_' + actualTradeId]: false }));
+                                              }
+                                            }
+                                          }}
+                                          className="px-2.5 py-1.5 rounded-lg bg-rose-700 text-white hover:bg-rose-800 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs transition-all active:scale-95"
+                                          title="Khóa giao dịch và đưa trạng thái món đồ về ban đầu"
+                                        >
+                                          <Lock className="w-3.5 h-3.5" /> Khóa giao dịch & Trả về kho
+                                        </button>
+                                      ))}
                                     </div>
                                   </div>
                                 )}

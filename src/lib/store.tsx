@@ -1262,18 +1262,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (isSupabaseConfigured() && supabase) {
       const sb = supabase;
       try {
-        await Promise.all([
-          sb.from('items').delete().eq('id', id),
-          sb.from('transactions').update({ status: 'CANCELLED' }).eq('item_id', id),
-          sb.from('profiles').upsert({
-            id: 'sys-deleted-items',
-            full_name: 'Danh Sách Món Đồ Đã Xóa',
-            role: 'admin',
-            address: JSON.stringify(Array.from(nextDeletedIds)),
-          }),
+        await Promise.race([
+          Promise.all([
+            sb.from('items').delete().eq('id', id),
+            sb.from('transactions').update({ status: 'CANCELLED' }).eq('item_id', id),
+            sb.from('profiles').upsert({
+              id: 'sys-deleted-items',
+              full_name: 'Danh Sách Món Đồ Đã Xóa',
+              role: 'admin',
+              address: JSON.stringify(Array.from(nextDeletedIds)),
+            }),
+          ]),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase delete timeout')), 4000)),
         ]);
       } catch (err) {
-        console.warn('Supabase deleteItem error:', err);
+        console.warn('Supabase deleteItem error/timeout:', err);
       }
     }
 
@@ -1623,9 +1626,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     updateItem(itemId, { status: 'HIDDEN' });
     if (isSupabaseConfigured() && supabase) {
       try {
-        await supabase.from('items').update({ status: 'HIDDEN' }).eq('id', itemId);
+        await Promise.race([
+          supabase.from('items').update({ status: 'HIDDEN' }).eq('id', itemId),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase hide timeout')), 4000)),
+        ]);
       } catch (err) {
-        console.warn('Supabase adminHideItem error:', err);
+        console.warn('Supabase adminHideItem error/timeout:', err);
       }
     }
     broadcastKdlcSync('ITEM_FROZEN', itemId);
@@ -1635,9 +1641,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     updateItem(itemId, { status: 'ACTIVE' });
     if (isSupabaseConfigured() && supabase) {
       try {
-        await supabase.from('items').update({ status: 'ACTIVE' }).eq('id', itemId);
+        await Promise.race([
+          supabase.from('items').update({ status: 'ACTIVE' }).eq('id', itemId),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase restore timeout')), 4000)),
+        ]);
       } catch (err) {
-        console.warn('Supabase adminRestoreItem error:', err);
+        console.warn('Supabase adminRestoreItem error/timeout:', err);
       }
     }
     broadcastKdlcSync('ITEM_RESTORED', itemId);
@@ -2101,17 +2110,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     updateItem(trans.item_id, { status: 'ACTIVE' });
     if (isSupabaseConfigured() && supabase) {
       try {
-        await Promise.all([
-          supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id),
-          supabase.from('transactions').update({
-            status: 'CANCELLED',
-            giver_confirmed: false,
-            receiver_confirmed: false,
-            completed_at: null,
-          }).eq('id', transactionId),
+        await Promise.race([
+          Promise.all([
+            supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id),
+            supabase.from('transactions').update({
+              status: 'CANCELLED',
+              giver_confirmed: false,
+              receiver_confirmed: false,
+              completed_at: null,
+            }).eq('id', transactionId),
+          ]),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase cancel trade timeout')), 4000)),
         ]);
       } catch (err) {
-        console.warn('Supabase cancel trade error:', err);
+        console.warn('Supabase cancel trade error/timeout:', err);
       }
     }
 
@@ -2212,11 +2224,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isSupabaseConfigured() && supabase) {
       try {
-        await Promise.all([
-          supabase.from('transactions').update({ status: nextStatus, completed_at: null }).eq('id', transactionId),
-          supabase.from('items').update({ status: 'IN_PROGRESS' }).eq('id', trans.item_id),
+        await Promise.race([
+          Promise.all([
+            supabase.from('transactions').update({ status: nextStatus, completed_at: null }).eq('id', transactionId),
+            supabase.from('items').update({ status: 'IN_PROGRESS' }).eq('id', trans.item_id),
+          ]),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase restore trade timeout')), 4000)),
         ]);
-      } catch {}
+      } catch (err) {
+        console.warn('Supabase restore trade error/timeout:', err);
+      }
     }
 
     const targetItem = getItemById(trans.item_id) || items.find((i) => i.id === trans.item_id);
