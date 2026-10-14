@@ -265,10 +265,40 @@ export default function ProfilePage() {
   // Items posted by current user
   const userItems = items.filter((i) => i.user_id === currentUser.id);
 
-  // Transactions involving current user
-  const userTrades = transactions.filter(
-    (t) => t.giver_id === currentUser.id || t.receiver_id === currentUser.id
-  );
+  // Transactions involving current user (deduplicated per item so each item has at most 1 progress)
+  const userTrades = React.useMemo(() => {
+    if (!currentUser) return [];
+    const raw = transactions.filter(
+      (t) =>
+        t.status !== 'CANCELLED' &&
+        t.id !== 'tr-001' &&
+        t.id !== 'tr-002' &&
+        (t.giver_id === currentUser.id || t.receiver_id === currentUser.id)
+    );
+
+    const result: typeof raw = [];
+    const giverItemIds = new Set<string>();
+
+    raw.forEach((t) => {
+      if (t.giver_id === currentUser.id) {
+        if (!giverItemIds.has(t.item_id)) {
+          const itemTrades = raw.filter(
+            (other) => other.giver_id === currentUser.id && other.item_id === t.item_id
+          );
+          const activeTrade = itemTrades.find(
+            (x) => x.status === 'ACCEPTED' || x.status === 'HANDED_OVER'
+          );
+          const chosen = activeTrade || itemTrades[0];
+          result.push(chosen);
+          giverItemIds.add(t.item_id);
+        }
+      } else {
+        result.push(t);
+      }
+    });
+
+    return result;
+  }, [transactions, currentUser]);
 
   // Reviews for this user
   const userReviews = reviews.filter((r) => r.reviewee_id === currentUser.id);
