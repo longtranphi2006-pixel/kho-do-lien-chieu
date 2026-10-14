@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
 
     const apiKey = process.env.GEMINI_API_KEY;
 
-    // 1. If Gemini API Key is available, invoke Gemini 1.5 Flash API
+    // 1. If Gemini API Key is available, invoke Google Gemini Multimodal AI
     if (apiKey) {
       try {
         const prompt = `
@@ -19,6 +19,7 @@ Kiểm duyệt bài đăng sau đây dựa trên các tiêu chí nghiêm ngặt:
 1. NGUYÊN TẮC PHI THƯƠNG MẠI: Tuyệt đối KHÔNG được rao bán, thu tiền mặt, chuyển khoản ngân hàng, báo giá (vd: 50k, 100.000đ, giá rẻ, thanh lý có thu tiền). Chỉ chấp nhận "Cho miễn phí" hoặc "Đổi đồ".
 2. AN TOÀN & HỢP PHÁP: Cấm vũ khí, hung khí, ma túy, chất kích thích, thuốc lá/vape, hóa chất nguy hiểm, nội dung người lớn, hàng giả hàng cấm.
 3. TÍNH XÁC THỰC: Đồ dùng thực tế cho sinh viên/cư dân (sách vở, giáo trình, đồ gia dụng, đồ học tập, quần áo, thiết bị cá nhân).
+4. HÌNH ẢNH: Nếu có ảnh đính kèm, hãy kiểm tra xem hình ảnh có phù hợp với mô tả món đồ không, có chứa nội dung cấm hoặc mã QR/số tài khoản đòi tiền không.
 
 Thông tin bài đăng:
 - Tiêu đề: "${title}"
@@ -37,31 +38,59 @@ Trả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng sau (kh�
 }
 `;
 
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-        const response = await fetch(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              responseMimeType: 'application/json',
-              temperature: 0.2,
-            },
-          }),
-        });
+        const parts: any[] = [{ text: prompt }];
 
-        if (response.ok) {
-          const data = await response.json();
-          const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (rawText) {
-            const parsed = JSON.parse(rawText.trim());
-            return NextResponse.json({
-              passed: Boolean(parsed.passed),
-              status: parsed.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING_ADMIN',
-              confidence: Number(parsed.confidence) || 95,
-              reasoning: String(parsed.reasoning || 'Kiểm duyệt tự động bởi Gemini Vision API thành công.'),
-              detected_tags: Array.isArray(parsed.detected_tags) ? parsed.detected_tags : ['an-toan', 'hop-le'],
-            } as ModerationResult);
+        // Attach image parts for real Gemini Vision multimodal inspection
+        if (Array.isArray(images) && images.length > 0) {
+          for (const img of images.slice(0, 2)) {
+            if (typeof img === 'string' && img.startsWith('data:image/')) {
+              const [meta, base64Data] = img.split(',');
+              const mimeMatch = meta.match(/data:(.*?);base64/);
+              if (base64Data && mimeMatch) {
+                parts.push({
+                  inlineData: {
+                    mimeType: mimeMatch[1],
+                    data: base64Data,
+                  },
+                });
+              }
+            }
+          }
+        }
+
+        const candidateModels = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.5-flash'];
+
+        for (const model of candidateModels) {
+          try {
+            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const response = await fetch(geminiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts }],
+                generationConfig: {
+                  responseMimeType: 'application/json',
+                  temperature: 0.2,
+                },
+              }),
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (rawText) {
+                const parsed = JSON.parse(rawText.trim());
+                return NextResponse.json({
+                  passed: Boolean(parsed.passed),
+                  status: parsed.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING_ADMIN',
+                  confidence: Number(parsed.confidence) || 98,
+                  reasoning: String(parsed.reasoning || `Kiểm duyệt tự động bởi Google Gemini (${model}) thành công.`),
+                  detected_tags: Array.isArray(parsed.detected_tags) ? parsed.detected_tags : ['an-toan', 'hop-le'],
+                } as ModerationResult);
+              }
+            }
+          } catch (modelErr) {
+            console.warn(`Model ${model} failed, trying next candidate:`, modelErr);
           }
         }
       } catch (geminiError) {
