@@ -49,7 +49,13 @@ function ItemDetailContent() {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [pickupLocation, setPickupLocation] = useState(item?.location || 'Cổng ĐH Bách Khoa (54 Nguyễn Lương Bằng)');
-  const [scheduledDate, setScheduledDate] = useState('2026-10-14T17:00');
+  const [scheduledDate, setScheduledDate] = useState(() => {
+    const tomorrow = new Date(Date.now() + 86400000);
+    const yyyy = tomorrow.getFullYear();
+    const mm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    const dd = String(tomorrow.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}T10:00`;
+  });
   const [requestNote, setRequestNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
@@ -77,10 +83,7 @@ function ItemDetailContent() {
   const isDonorCurrent = Boolean(
     currentUser && (
       currentUser.id === item.user_id ||
-      (currentUser.email && donor?.email && currentUser.email.toLowerCase() === donor.email.toLowerCase()) ||
-      (currentUser.full_name && donor?.full_name && currentUser.full_name === donor.full_name && currentUser.full_name !== 'Thành viên Liên Chiểu') ||
-      (currentUser.email?.toLowerCase().includes('longtranphi22006') && (item.user_id === 'usr-oauth-1791897070645' || item.user_id === 'usr-oauth-1791902102209')) ||
-      (currentUser.email?.toLowerCase().includes('longtranphi2006') && item.user_id === 'usr-oauth-1791899728239')
+      (currentUser.email && donor?.email && currentUser.email.trim().toLowerCase() === donor.email.trim().toLowerCase())
     )
   );
 
@@ -101,13 +104,11 @@ function ItemDetailContent() {
   const myUserIds = new Set<string>();
   if (currentUser) {
     myUserIds.add(currentUser.id);
-    if (currentUser.email) {
+    if (currentUser.email && currentUser.email.trim()) {
+      const cleanEmail = currentUser.email.trim().toLowerCase();
       allUsers
-        .filter((u) => u.email && u.email.toLowerCase() === currentUser.email?.toLowerCase())
+        .filter((u) => u.email && u.email.trim().toLowerCase() === cleanEmail)
         .forEach((u) => myUserIds.add(u.id));
-    }
-    if (currentUser.email?.toLowerCase().includes('longtranphi2006')) {
-      myUserIds.add('usr-oauth-1791899728239');
     }
   }
 
@@ -242,24 +243,28 @@ function ItemDetailContent() {
   const handleCreateRequest = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) {
-      router.push('/auth');
+      router.push(`/auth?redirect=/items/${item.id}`);
       return;
     }
     setIsSubmitting(true);
     try {
-      const trans = createTradeRequest({
+      const effLocation = pickupLocation.trim() || item.location || 'Cổng ĐH Bách Khoa (54 Nguyễn Lương Bằng)';
+      const effDate = scheduledDate || new Date(Date.now() + 86400000).toISOString();
+      const effNote = requestNote.trim() || `Chào bạn, mình là ${currentUser.full_name} (${currentUser.university || 'Đà Nẵng'}), mình muốn hẹn nhận món "${item.title}".`;
+
+      createTradeRequest({
         itemId: item.id,
-        pickupLocation,
-        scheduledDate,
-        note: requestNote || `Chào bạn, mình là ${currentUser.full_name} (${currentUser.university}), mình muốn hẹn nhận món "${item.title}".`,
+        pickupLocation: effLocation,
+        scheduledDate: effDate,
+        note: effNote,
       });
       setShowRequestModal(false);
-      setIsSubmitting(false);
-      setActionSuccessMsg('Đã gửi yêu cầu vào hàng chờ thành công! Chủ món đồ sẽ xem xét chọn.');
-      setTimeout(() => setActionSuccessMsg(null), 4000);
+      setActionSuccessMsg('Đã gửi yêu cầu vào hàng chờ thành công! Bạn đang ở trong danh sách chờ nhận đồ.');
+      setTimeout(() => setActionSuccessMsg(null), 5000);
     } catch (err: any) {
       console.error(err);
       alert(err?.message || 'Lỗi gửi yêu cầu');
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -974,7 +979,6 @@ function ItemDetailContent() {
                   type="datetime-local"
                   value={scheduledDate}
                   onChange={(e) => setScheduledDate(e.target.value)}
-                  required
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 focus:outline-hidden focus:border-[#0F5B4B] focus:ring-2 focus:ring-[#0F5B4B]/20"
                 />
               </div>

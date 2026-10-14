@@ -870,20 +870,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     scheduledDate?: string;
   }): Transaction => {
     const targetItem = getItemById(params.itemId) || items.find((i) => i.id === params.itemId);
-    if (!targetItem) throw new Error('Item not found');
+    if (!targetItem) throw new Error('Không tìm thấy thông tin món đồ.');
     if (!currentUser) {
       throw new Error('Vui lòng đăng nhập để thực hiện yêu cầu nhận đồ');
     }
     const receiverId = currentUser.id;
     const receiverName = currentUser.full_name;
 
-    // Check if user already has an active or pending request
     const myAliasIds = getUserAliasIds(currentUser.id);
+
+    // 1. Donor cannot request their own item
+    if (
+      myAliasIds.includes(targetItem.user_id) ||
+      (targetItem.donor?.email && currentUser.email && targetItem.donor.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase())
+    ) {
+      throw new Error('Bạn là người đăng món đồ này, không thể gửi yêu cầu nhận chính đồ của mình.');
+    }
+
+    // 2. Check if this exact user already has an active or pending request for this item
     const existingActive = transactions.find(
       (t) => t.item_id === params.itemId && myAliasIds.includes(t.receiver_id) && t.status !== 'CANCELLED'
     );
     if (existingActive) {
-      return existingActive;
+      throw new Error('Bạn đã gửi yêu cầu nhận món đồ này rồi. Hãy chờ người đăng xem xét chọn!');
     }
 
     const newTransaction: Transaction = {
@@ -898,7 +907,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       created_at: new Date().toISOString(),
     };
 
+    const currentWaitCount = transactions.filter(
+      (t) => t.item_id === params.itemId && t.status !== 'CANCELLED'
+    ).length + 1;
+
+    const donorNotif: NotificationItem = {
+      id: `notif-${Date.now()}`,
+      user_id: targetItem.user_id,
+      title: 'Đề nghị nhận đồ mới!',
+      content: `${receiverName} muốn nhận món "${targetItem.title}" (Hàng chờ hiện có: ${currentWaitCount} người). Hãy chọn bạn phù hợp để trao đồ!`,
+      is_read: false,
+      action_link: `/items/${targetItem.id}`,
+      type: 'trade',
+      created_at: new Date().toISOString(),
+    };
+
     setTransactions((prev) => [newTransaction, ...prev]);
+    setNotifications((prev) => [donorNotif, ...prev]);
 
     // Note: Do not lock item into IN_PROGRESS immediately on request!
     // The item remains open so multiple students can join the queue until the owner chooses one.
@@ -917,22 +942,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       pushTrade();
     }
-
-    const currentWaitCount = transactions.filter(
-      (t) => t.item_id === params.itemId && t.status !== 'CANCELLED'
-    ).length + 1;
-
-    const donorNotif: NotificationItem = {
-      id: `notif-${Date.now()}`,
-      user_id: targetItem.user_id,
-      title: 'Đề nghị nhận đồ mới!',
-      content: `${receiverName} muốn nhận món "${targetItem.title}" (Hàng chờ hiện có: ${currentWaitCount} người). Hãy chọn bạn phù hợp để trao đồ!`,
-      is_read: false,
-      action_link: `/items/${targetItem.id}`,
-      type: 'trade',
-      created_at: new Date().toISOString(),
-    };
-    setNotifications((prev) => [donorNotif, ...prev]);
 
     return newTransaction;
   };
@@ -1177,17 +1186,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!userId) return [];
     const baseProfile = profiles.find((p) => p.id === userId) || currentUser;
     const ids = new Set<string>([userId]);
-    if (baseProfile?.email) {
+    if (baseProfile?.email && baseProfile.email.trim()) {
+      const cleanEmail = baseProfile.email.trim().toLowerCase();
       profiles
-        .filter((p) => p.email && p.email.toLowerCase() === baseProfile.email?.toLowerCase())
+        .filter((p) => p.email && p.email.trim().toLowerCase() === cleanEmail)
         .forEach((p) => ids.add(p.id));
-    }
-    if (baseProfile?.email?.toLowerCase().includes('longtranphi22006') || baseProfile?.full_name === 'Trần Đức Long') {
-      ids.add('usr-oauth-1791897070645');
-      ids.add('usr-oauth-1791902102209');
-    }
-    if (baseProfile?.email?.toLowerCase().includes('longtranphi2006') || baseProfile?.full_name?.includes('18.Trần Lê Phi Long')) {
-      ids.add('usr-oauth-1791899728239');
     }
     return Array.from(ids);
   };
@@ -1357,21 +1360,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Determine sender aliases to prevent sending notification to oneself
-    const senderAliases = new Set<string>([senderId]);
+    const senderAliases = new Set<string>(getUserAliasIds(senderId));
     if (currentUser) {
-      senderAliases.add(currentUser.id);
-      profiles
-        .filter(
-          (u) =>
-            (u.email && currentUser.email && u.email.toLowerCase() === currentUser.email.toLowerCase()) ||
-            (u.full_name && currentUser.full_name && u.full_name === currentUser.full_name && u.full_name !== 'Thành viên Liên Chiểu')
-        )
-        .forEach((u) => senderAliases.add(u.id));
-      if (currentUser.email?.toLowerCase().includes('long') || currentUser.full_name?.includes('Long')) {
-        senderAliases.add('usr-oauth-1791897070645');
-        senderAliases.add('usr-oauth-1791902102209');
-        senderAliases.add('usr-oauth-1791899728239');
-      }
+      getUserAliasIds(currentUser.id).forEach((id) => senderAliases.add(id));
     }
 
     // Determine other user's ID

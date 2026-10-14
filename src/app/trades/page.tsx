@@ -30,19 +30,11 @@ export default function TradesListPage() {
     const ids = new Set<string>();
     if (currentUser) {
       ids.add(currentUser.id);
-      allUsers
-        .filter(
-          (u) =>
-            (u.email && currentUser.email && u.email.toLowerCase() === currentUser.email.toLowerCase()) ||
-            (u.full_name && currentUser.full_name && u.full_name === currentUser.full_name && u.full_name !== 'Thành viên Liên Chiểu')
-        )
-        .forEach((u) => ids.add(u.id));
-      if (currentUser.email?.toLowerCase().includes('longtranphi22006') || currentUser.full_name === 'Trần Đức Long') {
-        ids.add('usr-oauth-1791897070645');
-        ids.add('usr-oauth-1791902102209');
-      }
-      if (currentUser.email?.toLowerCase().includes('longtranphi2006') || currentUser.full_name?.includes('18.Trần Lê Phi Long')) {
-        ids.add('usr-oauth-1791899728239');
+      if (currentUser.email && currentUser.email.trim()) {
+        const cleanEmail = currentUser.email.trim().toLowerCase();
+        allUsers
+          .filter((u) => u.email && u.email.trim().toLowerCase() === cleanEmail)
+          .forEach((u) => ids.add(u.id));
       }
     }
     return ids;
