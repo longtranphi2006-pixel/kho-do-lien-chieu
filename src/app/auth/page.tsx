@@ -333,7 +333,7 @@ function AuthContent() {
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
-                  Trường / Đơn vị học tập tại Đà Nẵng
+                  Nhóm đối tượng / Đơn vị tại Đà Nẵng
                 </label>
                 <div className="relative">
                   <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />

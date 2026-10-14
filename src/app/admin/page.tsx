@@ -155,17 +155,20 @@ export default function AdminDashboardPage() {
     return { name: cat, count, percent: totalItems > 0 ? Math.round((count / totalItems) * 100) : 0 };
   });
 
-  // University counts for Student distribution
-  const universitiesList = [
+  // Target group counts for user distribution (Người dùng theo nhóm đối tượng)
+  const targetGroupsList = [
     'Trường Đại học Bách khoa - ĐHĐN',
     'Trường Đại học Sư phạm - ĐHĐN',
     'Trường Cao đẳng Kinh tế - Kế hoạch',
     'Cư dân quận Liên Chiểu',
+    'Ký túc xá Phía Tây / Khu Công nghệ cao',
   ];
-  const universityCounts = universitiesList.map((uni) => {
-    const count = allUsers.filter((u) => u.university === uni).length;
+  const userGroupCounts = targetGroupsList.map((group) => {
+    const count = allUsers.filter(
+      (u) => u.university === group || (group.includes('Ký túc xá') && u.university?.includes('Ký túc xá'))
+    ).length;
     return {
-      name: uni.replace('Trường Đại học ', 'ĐH ').replace('Trường Cao đẳng ', 'CĐ '),
+      name: group.replace('Trường Đại học ', 'ĐH ').replace('Trường Cao đẳng ', 'CĐ '),
       count,
       percent: allUsers.length > 0 ? Math.round((count / allUsers.length) * 100) : 0,
     };
@@ -548,16 +551,16 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
 
-              {/* University Distribution */}
+              {/* Target Group Distribution */}
               <div className="space-y-2 pt-1">
                 <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                  Thành viên theo cơ sở đào tạo tại Đà Nẵng
+                  Người dùng theo nhóm đối tượng
                 </h4>
                 <div className="space-y-2">
-                  {universityCounts.map((uni, idx) => (
+                  {userGroupCounts.map((group, idx) => (
                     <div key={idx} className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-50 border border-slate-100">
-                      <span className="font-medium text-slate-700 truncate pr-2">{uni.name}</span>
-                      <span className="font-bold text-slate-900 shrink-0">{uni.count} SV</span>
+                      <span className="font-medium text-slate-700 truncate pr-2">{group.name}</span>
+                      <span className="font-bold text-slate-900 shrink-0">{group.count} người</span>
                     </div>
                   ))}
                 </div>
@@ -804,7 +807,7 @@ export default function AdminDashboardPage() {
                 type="text"
                 value={userSearch}
                 onChange={(e) => setUserSearch(e.target.value)}
-                placeholder="Tìm thành viên, trường ĐH..."
+                placeholder="Tìm thành viên, nhóm đối tượng..."
                 className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs focus:outline-hidden focus:border-[#0F5B4B]"
               />
             </div>
@@ -823,7 +826,7 @@ export default function AdminDashboardPage() {
                 <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase text-[10px] tracking-wider">
                   <tr>
                     <th className="p-3">Thành viên</th>
-                    <th className="p-3">Trường / Đơn vị</th>
+                    <th className="p-3">Nhóm đối tượng / Đơn vị</th>
                     <th className="p-3">Liên hệ</th>
                     <th className="p-3 text-center">Đã trao</th>
                     <th className="p-3 text-center">Giao dịch</th>

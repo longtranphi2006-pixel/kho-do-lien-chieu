@@ -147,6 +147,12 @@ export default function ProfilePage() {
     setShowEditModal(true);
   };
 
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.search.includes('edit=true')) {
+      handleOpenEdit();
+    }
+  }, [currentUser]);
+
   const handleAvatarFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -695,7 +701,7 @@ export default function ProfilePage() {
               {/* 3. University / Organization */}
               <div className="space-y-1">
                 <label className="block font-bold text-slate-700">
-                  Trường / Cơ sở đào tạo / Tổ chức
+                  Nhóm đối tượng / Trường / Tổ chức
                 </label>
                 <div className="relative">
                   <Building className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />

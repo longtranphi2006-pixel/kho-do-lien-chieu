@@ -19,6 +19,7 @@ import {
   Flame,
   CheckCheck,
   Star,
+  Edit3,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -388,6 +389,15 @@ export const Navbar: React.FC = () => {
                       >
                         <User className="w-4 h-4" />
                         Hồ sơ cá nhân
+                      </Link>
+
+                      <Link
+                        href="/profile?edit=true"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="flex items-center gap-2.5 px-4 py-2 text-[#0F5B4B] font-bold hover:bg-[#EAF7F2]"
+                      >
+                        <Edit3 className="w-4 h-4 text-[#0F5B4B]" />
+                        Tùy chỉnh thông tin
                       </Link>
 
                       <Link
