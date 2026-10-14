@@ -132,12 +132,17 @@ function ItemDetailContent() {
   }
 
   const isFavorited = favorites.includes(item.id);
-  const donor = item.donor;
+  // Dynamically resolve the donor from allUsers / currentUser for freshest profile info
+  const donorUser = (currentUser && currentUser.id === item.user_id ? currentUser : null) ||
+    allUsers.find((u) => u.id === item.user_id) ||
+    (item.donor?.email ? allUsers.find((u) => u.email && u.email.trim().toLowerCase() === item.donor?.email?.trim().toLowerCase()) : null);
+  const donor = donorUser || item.donor;
 
   // Robust donor identification that survives duplicate session IDs / OAuth logins
   const isDonorCurrent = Boolean(
     currentUser && (
       currentUser.id === item.user_id ||
+      (donorUser && donorUser.id === currentUser.id) ||
       (currentUser.email && donor?.email && currentUser.email.trim().toLowerCase() === donor.email.trim().toLowerCase())
     )
   );
@@ -517,7 +522,7 @@ function ItemDetailContent() {
           <div className="p-3.5 rounded-xl bg-[#EAF7F2] border border-[#A7E2CB] text-xs text-[#0F5B4B] space-y-1">
             <div className="flex items-center gap-1.5 font-bold">
               <Sparkles className="w-4 h-4 text-emerald-600" />
-              <span>Đã kiểm duyệt AI & BQL Kho Đồ</span>
+              <span>Đã kiểm duyệt an toàn & BQL Kho Đồ</span>
             </div>
             <p className="text-[11px] leading-relaxed opacity-90">
               {item.ai_moderation_reason || 'Bài đăng đáp ứng đầy đủ tiêu chí phi thương mại và an toàn cộng đồng sinh viên.'}

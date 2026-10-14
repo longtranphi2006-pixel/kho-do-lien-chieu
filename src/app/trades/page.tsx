@@ -271,7 +271,7 @@ export default function TradesListPage() {
             )}
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Theo dõi quy trình giao nhận 4 bước P2P và xác nhận bàn giao đồ tận tay.
+            Theo dõi quy trình giao nhận 4 bước và xác nhận bàn giao đồ tận tay.
           </p>
         </div>
 

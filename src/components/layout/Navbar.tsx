@@ -132,7 +132,7 @@ export const Navbar: React.FC = () => {
                   Kho Đồ Liên Chiểu
                 </span>
                 <span className="text-[10px] text-slate-500 font-medium tracking-tight">
-                  Chia sẻ đồ dùng P2P • Hòa Khánh, ĐN
+                  Chia sẻ đồ dùng sinh viên • Hòa Khánh, ĐN
                 </span>
               </div>
             </Link>

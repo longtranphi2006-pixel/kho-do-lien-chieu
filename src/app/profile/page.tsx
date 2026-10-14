@@ -40,15 +40,6 @@ import {
   AlertCircle,
 } from 'lucide-react';
 
-const PRESET_AVATARS = [
-  { label: 'Nam SV Bách Khoa', url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=400&q=80' },
-  { label: 'Nữ SV Sư Phạm', url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80' },
-  { label: 'Nam SV IT', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80' },
-  { label: 'Nữ SV Kinh Tế', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80' },
-  { label: 'Sinh viên năng động', url: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80' },
-  { label: 'Ban Quản Trị / BQL', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80' },
-];
-
 const TARGET_GROUPS = [
   { value: 'Sinh viên', label: '🎓 Sinh viên', desc: 'Đang theo học tại các trường Đại học, Cao đẳng' },
   { value: 'Học sinh', label: '🧑‍🎓 Học sinh', desc: 'Học sinh THPT, THCS trên địa bàn' },
@@ -1086,45 +1077,15 @@ export default function ProfilePage() {
                           <Upload className="w-3.5 h-3.5 text-[#0F5B4B]" />
                           <span>{isProcessingAvatar ? 'Đang nén...' : 'Tải ảnh từ máy'}</span>
                         </button>
-                        <span className="text-[11px] text-slate-400">hoặc chọn mẫu bên dưới</span>
                       </div>
 
                       <input
                         type="text"
                         value={avatarUrl}
                         onChange={(e) => setAvatarUrl(e.target.value)}
-                        placeholder="Hoặc dán link ảnh trực tiếp (https://...)"
+                        placeholder="Hoặc dán đường dẫn link ảnh trực tiếp (https://...)"
                         className="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs focus:outline-hidden focus:border-[#0F5B4B]"
                       />
-                    </div>
-                  </div>
-
-                  {/* Preset Avatars */}
-                  <div className="pt-1">
-                    <div className="text-[11px] font-semibold text-slate-500 mb-1.5">Ảnh mẫu có sẵn:</div>
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                      {PRESET_AVATARS.map((p, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setAvatarUrl(p.url)}
-                          className={`p-1 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
-                            avatarUrl === p.url
-                              ? 'border-[#0F5B4B] bg-emerald-50 ring-2 ring-[#0F5B4B]/20'
-                              : 'border-slate-200 hover:border-slate-300 bg-white'
-                          }`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={p.url}
-                            alt={p.label}
-                            className="w-8 h-8 rounded-lg object-cover"
-                          />
-                          <span className="text-[9px] font-semibold text-slate-600 line-clamp-1">
-                            {p.label}
-                          </span>
-                        </button>
-                      ))}
                     </div>
                   </div>
                 </div>

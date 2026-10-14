@@ -22,14 +22,6 @@ import {
   Loader2,
 } from 'lucide-react';
 
-const PRESET_SAMPLE_IMAGES = [
-  { label: 'Sách giáo trình', url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=800&q=80' },
-  { label: 'Nồi cơm điện', url: 'https://images.unsplash.com/photo-1584990347449-39958bc5e24c?auto=format&fit=crop&w=800&q=80' },
-  { label: 'Bàn học gấp', url: 'https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?auto=format&fit=crop&w=800&q=80' },
-  { label: 'Quạt điện', url: 'https://images.unsplash.com/photo-1618941716939-553df3c6c278?auto=format&fit=crop&w=800&q=80' },
-  { label: 'Balo đi học', url: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=800&q=80' },
-];
-
 const processImageFile = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
@@ -91,7 +83,7 @@ export default function NewItemPage() {
   const [condition, setCondition] = useState<ItemCondition>('LIKE_NEW');
   const [purpose, setPurpose] = useState<ItemPurpose>('FREE');
   const [location, setLocation] = useState<string>(LOCATIONS[1]); // Hòa Khánh Bắc
-  const [images, setImages] = useState<string[]>([PRESET_SAMPLE_IMAGES[0].url]);
+  const [images, setImages] = useState<string[]>([]);
   const [customImageUrl, setCustomImageUrl] = useState('');
 
   // AI Pipeline state
@@ -125,12 +117,6 @@ export default function NewItemPage() {
       setIsProcessingPhotos(false);
       if (galleryInputRef.current) galleryInputRef.current.value = '';
       if (cameraInputRef.current) cameraInputRef.current.value = '';
-    }
-  };
-
-  const handleAddSampleImage = (url: string) => {
-    if (!images.includes(url) && images.length < 6) {
-      setImages([...images, url]);
     }
   };
 
@@ -237,7 +223,7 @@ export default function NewItemPage() {
 
         <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#EAF7F2] text-[#0F5B4B] text-xs font-semibold border border-[#A7E2CB]">
           <Sparkles className="w-4 h-4 text-emerald-600" />
-          <span>Gemini 1.5 Flash Verified</span>
+          <span>Kiểm duyệt an toàn nội dung</span>
         </div>
       </div>
 
@@ -338,32 +324,19 @@ export default function NewItemPage() {
             )}
           </div>
 
-          {/* Quick preset sample buttons */}
-          <div className="pt-2 border-t border-slate-100">
-            <span className="text-xs text-slate-500 font-medium mr-2">Hoặc chọn nhanh ảnh mẫu có sẵn:</span>
-            <div className="inline-flex flex-wrap gap-1.5 mt-1.5">
-              {PRESET_SAMPLE_IMAGES.map((sample) => (
-                <button
-                  key={sample.label}
-                  type="button"
-                  onClick={() => handleAddSampleImage(sample.url)}
-                  disabled={images.length >= 6}
-                  className="px-2.5 py-1 rounded-lg text-xs bg-slate-100 text-slate-700 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] border border-slate-200 transition-colors cursor-pointer disabled:opacity-40"
-                >
-                  + {sample.label}
-                </button>
-              ))}
-              {images.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setImages([])}
-                  className="px-2.5 py-1 rounded-lg text-xs text-rose-600 hover:bg-rose-50 border border-rose-200 transition-colors cursor-pointer"
-                >
-                  Xóa tất cả ảnh
-                </button>
-              )}
+          {/* Clear all photos button if images exist */}
+          {images.length > 0 && (
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Đã chọn {images.length} hình ảnh</span>
+              <button
+                type="button"
+                onClick={() => setImages([])}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 transition-colors cursor-pointer"
+              >
+                Xóa tất cả ảnh đã chọn
+              </button>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Title */}

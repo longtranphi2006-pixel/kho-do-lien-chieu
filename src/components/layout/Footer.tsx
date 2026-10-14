@@ -18,7 +18,7 @@ export const Footer: React.FC = () => {
               </span>
             </div>
             <p className="text-slate-400 text-sm leading-relaxed max-w-md">
-              Nền tảng chia sẻ và đổi đồ dùng sinh viên P2P phi thương mại tại quận Liên Chiểu, TP. Đà Nẵng.
+              Nền tảng chia sẻ và đổi đồ dùng sinh viên phi thương mại tại quận Liên Chiểu, TP. Đà Nẵng.
               Kết nối sinh viên ĐH Bách Khoa, ĐH Sư Phạm, CĐ Kinh Tế - Kế Hoạch và người dân địa phương để kéo dài vòng đời đồ dùng.
             </p>
             <div className="flex items-center gap-2 text-xs text-emerald-400 font-medium bg-emerald-950/60 border border-emerald-800/60 px-3 py-1.5 rounded-lg w-fit">

@@ -151,7 +151,7 @@ export default function NotificationsPage() {
             )}
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Theo dõi yêu cầu nhận đồ, tiến trình trao nhận P2P và thông báo từ cộng đồng.
+            Theo dõi yêu cầu nhận đồ, tiến trình trao nhận đồ dùng và thông báo từ cộng đồng.
           </p>
         </div>
 

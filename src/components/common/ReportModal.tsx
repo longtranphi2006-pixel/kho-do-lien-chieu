@@ -36,7 +36,7 @@ const REPORT_REASONS: Array<{
   {
     value: 'COMMERCIAL_MONEY',
     label: 'Tiền bạc & Mua bán thương mại',
-    desc: 'Yêu cầu trả tiền mặt, đòi tiền cọc, ép giá, buôn bán sinh lời vi phạm quy tắc trao đổi 0đ P2P.',
+    desc: 'Yêu cầu trả tiền mặt, đòi tiền cọc, ép giá, buôn bán sinh lời vi phạm quy tắc chia sẻ 0đ.',
     icon: DollarSign,
   },
   {

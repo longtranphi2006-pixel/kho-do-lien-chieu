@@ -8,15 +8,15 @@ import { Footer } from '@/components/layout/Footer';
 import { OAuthListener } from '@/components/common/OAuthListener';
 
 export const metadata: Metadata = {
-  title: 'Kho Đồ Liên Chiểu | Mạng Lưới Chia Sẻ & Đổi Đồ Sinh Viên P2P Đà Nẵng',
+  title: 'Kho Đồ Liên Chiểu | Mạng Lưới Chia Sẻ & Trao Đổi Đồ Sinh Viên Đà Nẵng',
   description:
-    'Nền tảng chia sẻ đồ dùng miễn phí và đổi đồ P2P phi thương mại dành cho sinh viên ĐHBK, ĐH Sư Phạm và cư dân quận Liên Chiểu, TP. Đà Nẵng.',
+    'Nền tảng chia sẻ đồ dùng miễn phí và đổi đồ phi thương mại dành cho sinh viên ĐHBK, ĐH Sư Phạm và cư dân quận Liên Chiểu, TP. Đà Nẵng.',
   keywords: [
     'Kho đồ Liên Chiểu',
     'Chia sẻ đồ dùng Đà Nẵng',
     'Đổi đồ sinh viên Bách Khoa',
     'Cho đồ cũ Hòa Khánh',
-    'P2P bartering Da Nang',
+    'Trao đổi đồ dùng sinh viên Đà Nẵng',
   ],
 };
 

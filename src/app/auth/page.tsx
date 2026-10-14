@@ -215,7 +215,7 @@ function AuthContent() {
             Kho Đồ Liên Chiểu
           </h1>
           <p className="text-xs sm:text-sm text-slate-500">
-            Nền tảng chia sẻ & đổi đồ dùng sinh viên P2P
+            Mạng lưới chia sẻ & đổi đồ dùng sinh viên Liên Chiểu
           </p>
         </div>
 

@@ -412,27 +412,6 @@ function TradeStepperContent() {
         </h1>
       </div>
 
-      {/* Role Indicator Banner */}
-      <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-md flex items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center text-emerald-400 shrink-0">
-            <User className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="font-semibold text-slate-300">
-              {isParticipant ? 'Tư cách tham gia của bạn:' : 'Trạng thái theo dõi:'}
-            </div>
-            <div className="font-bold text-emerald-400 text-sm">
-              {isParticipant
-                ? effectiveRole === 'giver'
-                  ? `👤 Bên Cho Đồ (Chủ món đồ: ${giver?.full_name || 'Bạn'})`
-                  : `👤 Bên Nhận Đồ (${receiver?.full_name || 'Bạn'})`
-                : `🔒 Người xem (Giao dịch giữa ${giver?.full_name || 'Bên cho'} & ${receiver?.full_name || 'Bên nhận'})`}
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Visual 4-Step Stepper Bar */}
       <div className="bg-white p-5 sm:p-7 rounded-3xl border border-slate-200/90 shadow-xs">
         <div className="grid grid-cols-4 gap-2 relative">
@@ -670,7 +649,7 @@ function TradeStepperContent() {
               Xác nhận tiến trình trao đồ
             </h3>
             <p className="text-xs text-slate-500">
-              Mỗi bước chỉ được thực hiện bởi đúng bên có thẩm quyền theo quy định P2P.
+              Mỗi bước chỉ được thực hiện bởi đúng bên có thẩm quyền theo quy trình trao nhận.
             </p>
           </div>
           <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700">
@@ -1218,7 +1197,7 @@ function TradeStepperContent() {
         ) : (
           <div className="p-6 text-center text-xs text-slate-500 space-y-1">
             <Lock className="w-6 h-6 text-slate-400 mx-auto" />
-            <div className="font-semibold text-slate-700">Khung chat riêng tư P2P</div>
+            <div className="font-semibold text-slate-700">Khung trao đổi trực tiếp</div>
             <p>Tính năng trò chuyện chỉ dành riêng cho 2 bên tham gia trong giao dịch này.</p>
           </div>
         )}
