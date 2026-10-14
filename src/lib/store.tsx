@@ -57,6 +57,7 @@ interface AppContextType {
   advanceTradeStatus: (transactionId: string, nextStatus: TradeStatus) => void;
   confirmTradeHandover: (transactionId: string, role: 'giver' | 'receiver') => void;
   cancelTrade: (transactionId: string, reason?: string) => Promise<void>;
+  restoreTrade: (transactionId: string) => Promise<void>;
   sendTradeMessage: (transactionId: string, content: string) => Promise<void>;
   reviews: Review[];
   submitReview: (params: {
@@ -92,6 +93,7 @@ interface AppContextType {
   resolveReport: (reportId: string, action: 'RESOLVE' | 'DISMISS', adminNotes?: string) => void;
   adminHideItem: (itemId: string) => void;
   adminRestoreItem: (itemId: string) => void;
+  deletedItemIds: Set<string>;
   isSupabaseMode: boolean;
   activeRole: 'user' | 'admin' | 'guest';
 }
@@ -107,6 +109,7 @@ const STORAGE_KEYS = {
   FAVORITES: 'kdlc_favorites_v3',
   PROFILES: 'kdlc_profiles_v3',
   REPORTS: 'kdlc_reports_v3',
+  DELETED_ITEM_IDS: 'kdlc_deleted_item_ids_v4',
 };
 
 export const isUserLocked = (p?: Profile | null): boolean => {
@@ -158,7 +161,30 @@ export const hydrateProfile = (p: Profile): Profile => {
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [profiles, setProfiles] = useState<Profile[]>(() => MOCK_PROFILES.map(hydrateProfile));
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [items, setItems] = useState<Item[]>(MOCK_ITEMS);
+  const [deletedItemIds, setDeletedItemIds] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedDel = localStorage.getItem(STORAGE_KEYS.DELETED_ITEM_IDS);
+        if (savedDel) return new Set(JSON.parse(savedDel));
+      } catch {}
+    }
+    return new Set<string>();
+  });
+  const [items, setItems] = useState<Item[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedDel = localStorage.getItem(STORAGE_KEYS.DELETED_ITEM_IDS);
+        const delSet = savedDel ? new Set<string>(JSON.parse(savedDel)) : new Set<string>();
+        const saved = localStorage.getItem(STORAGE_KEYS.ITEMS);
+        if (saved) {
+          const parsed = JSON.parse(saved) as Item[];
+          return parsed.filter((i) => !delSet.has(i.id));
+        }
+        return MOCK_ITEMS.filter((i) => !delSet.has(i.id));
+      } catch {}
+    }
+    return MOCK_ITEMS;
+  });
   const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
   const [reviews, setReviews] = useState<Review[]>(MOCK_REVIEWS);
   const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
@@ -188,8 +214,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentUserId(null);
       }
 
+      let delSet = new Set<string>();
+      const savedDeleted = localStorage.getItem(STORAGE_KEYS.DELETED_ITEM_IDS);
+      if (savedDeleted) {
+        try {
+          delSet = new Set(JSON.parse(savedDeleted));
+          setDeletedItemIds(delSet);
+        } catch {}
+      }
+
       const savedItems = localStorage.getItem(STORAGE_KEYS.ITEMS);
-      if (savedItems) setItems(JSON.parse(savedItems));
+      if (savedItems) {
+        const parsed = JSON.parse(savedItems) as Item[];
+        setItems(parsed.filter((i) => !delSet.has(i.id)));
+      } else {
+        setItems(MOCK_ITEMS.filter((i) => !delSet.has(i.id)));
+      }
 
       const savedTrans = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
       if (savedTrans) {
@@ -341,18 +381,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         if (!isMounted) return;
 
-        // 1. NON-DESTRUCTIVE ITEMS MERGE:
-        // Keep any newly added local items that haven't landed in Supabase yet, and auto-push them!
+        // Check for deleted items blacklist in cloud
+        let activeDeleted = new Set(deletedItemIds);
+        if (profilesRes.data) {
+          const delRecord = profilesRes.data.find((p: any) => p.id === 'sys-deleted-items');
+          if (delRecord && delRecord.address) {
+            try {
+              const parsed = JSON.parse(delRecord.address);
+              if (Array.isArray(parsed)) {
+                parsed.forEach((id: string) => activeDeleted.add(id));
+              }
+            } catch {}
+          }
+        }
+        setDeletedItemIds(activeDeleted);
+        try {
+          localStorage.setItem(STORAGE_KEYS.DELETED_ITEM_IDS, JSON.stringify(Array.from(activeDeleted)));
+        } catch {}
+
+        // 1. NON-DESTRUCTIVE ITEMS MERGE (Filtered with activeDeleted to prevent resurrection):
         if (itemsRes.data) {
-          const dbItems = itemsRes.data as Item[];
+          const rawDbItems = itemsRes.data as Item[];
+          const dbItems = rawDbItems.filter((i) => !activeDeleted.has(i.id));
           const dbItemIds = new Set(dbItems.map((i) => i.id));
 
           setItems((prev) => {
-            const pendingSync = prev.filter((i) => !dbItemIds.has(i.id));
+            const pendingSync = prev.filter((i) => !dbItemIds.has(i.id) && !activeDeleted.has(i.id));
 
             // Background push un-synced items to Supabase
             if (pendingSync.length > 0) {
               pendingSync.forEach(async (pending) => {
+                if (activeDeleted.has(pending.id)) return;
                 try {
                   await ensureProfileInSupabase(pending.user_id);
                   await sb.from('items').upsert({
@@ -516,12 +575,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'postgres_changes',
         { event: '*', schema: 'public', table: 'items' },
         (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setItems((prev) => [payload.new as Item, ...prev.filter((i) => i.id !== payload.new.id)]);
-          } else if (payload.eventType === 'UPDATE') {
-            setItems((prev) => prev.map((i) => (i.id === payload.new.id ? (payload.new as Item) : i)));
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const it = payload.new as Item;
+            setDeletedItemIds((currentDeleted) => {
+              if (currentDeleted.has(it.id)) return currentDeleted;
+              setItems((prev) => [it, ...prev.filter((i) => i.id !== it.id)]);
+              return currentDeleted;
+            });
           } else if (payload.eventType === 'DELETE') {
-            setItems((prev) => prev.filter((i) => i.id !== payload.old.id));
+            const deletedId = (payload.old as Item).id;
+            setItems((prev) => prev.filter((i) => i.id !== deletedId));
           }
         }
       )
@@ -541,6 +604,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         { event: '*', schema: 'public', table: 'profiles' },
         (payload) => {
           if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+            // Check if this is the sys-deleted-items broadcast
+            if (payload.new.id === 'sys-deleted-items' && payload.new.address) {
+              try {
+                const parsed = JSON.parse(payload.new.address);
+                if (Array.isArray(parsed)) {
+                  setDeletedItemIds((prev) => {
+                    const next = new Set(prev);
+                    parsed.forEach((id: string) => next.add(id));
+                    try {
+                      localStorage.setItem(STORAGE_KEYS.DELETED_ITEM_IDS, JSON.stringify(Array.from(next)));
+                    } catch {}
+                    setItems((curItems) => curItems.filter((i) => !next.has(i.id)));
+                    return next;
+                  });
+                }
+              } catch {}
+            }
+
             // Check if this is the sys-reports-store broadcast
             if (payload.new.id === 'sys-reports-store' && payload.new.address) {
               try {
@@ -611,6 +692,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (Array.isArray(parsed)) setReports(parsed);
         } catch {}
       }
+      if (e.key === STORAGE_KEYS.DELETED_ITEM_IDS && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            const delSet = new Set<string>(parsed);
+            setDeletedItemIds(delSet);
+            setItems((prev) => prev.filter((i) => !delSet.has(i.id)));
+          }
+        } catch {}
+      }
+      if (e.key === STORAGE_KEYS.ITEMS && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setItems(parsed);
+        } catch {}
+      }
+      if (e.key === STORAGE_KEYS.TRANSACTIONS && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setTransactions(parsed);
+        } catch {}
+      }
     };
     const handleCustomReportUpdate = () => {
       const saved = localStorage.getItem(STORAGE_KEYS.REPORTS);
@@ -621,10 +724,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch {}
       }
     };
+    const handleCustomItemsUpdate = () => {
+      try {
+        const savedDel = localStorage.getItem(STORAGE_KEYS.DELETED_ITEM_IDS);
+        const delSet = savedDel ? new Set<string>(JSON.parse(savedDel)) : new Set<string>();
+        setDeletedItemIds(delSet);
+        const saved = localStorage.getItem(STORAGE_KEYS.ITEMS);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) setItems(parsed.filter((i: Item) => !delSet.has(i.id)));
+        }
+      } catch {}
+    };
+    const handleCustomTradesUpdate = () => {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) setTransactions(parsed);
+        }
+      } catch {}
+    };
+
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('kdlc-reports-updated', handleCustomReportUpdate);
+    window.addEventListener('kdlc-items-updated', handleCustomItemsUpdate);
+    window.addEventListener('kdlc-trades-updated', handleCustomTradesUpdate);
 
     // Guaranteed polling heartbeat every 6 seconds across mobile & desktop
     const pollTimer = setInterval(() => {
@@ -638,6 +765,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('kdlc-reports-updated', handleCustomReportUpdate);
+      window.removeEventListener('kdlc-items-updated', handleCustomItemsUpdate);
+      window.removeEventListener('kdlc-trades-updated', handleCustomTradesUpdate);
       clearInterval(pollTimer);
     };
   }, []);
@@ -901,6 +1030,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const getItemById = (id: string): Item | undefined => {
+    if (deletedItemIds.has(id)) return undefined;
     const item = items.find((i) => i.id === id);
     if (!item) return undefined;
     let donor = profiles.find((p) => p.id === item.user_id);
@@ -1022,6 +1152,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteItem = (id: string) => {
+    // 1. Permanently blacklist this item ID so it can never be resurrected by sync or mock data
+    const nextDeletedIds = new Set(deletedItemIds);
+    nextDeletedIds.add(id);
+    setDeletedItemIds(nextDeletedIds);
+    try {
+      localStorage.setItem(STORAGE_KEYS.DELETED_ITEM_IDS, JSON.stringify(Array.from(nextDeletedIds)));
+    } catch {}
+
+    // 2. Remove from local items state & storage
     setItems((prev) => {
       const next = prev.filter((item) => item.id !== id);
       try {
@@ -1030,7 +1169,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return next;
     });
 
-    // Also cancel any ongoing transactions for this deleted item so they don't remain stuck
+    // 3. Also cancel any ongoing transactions for this deleted item so they don't remain stuck
     setTransactions((prev) => {
       const nextTrades = prev.map((t) =>
         t.item_id === id && t.status !== 'CANCELLED' && t.status !== 'COMPLETED'
@@ -1043,8 +1182,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return nextTrades;
     });
 
+    // 4. Remove from favorites
+    setFavorites((prev) => {
+      const nextFavs = prev.filter((favId) => favId !== id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(nextFavs));
+      } catch {}
+      return nextFavs;
+    });
+
+    // 5. Delete from Supabase & push blacklist to cloud system profile
     if (isSupabaseConfigured() && supabase) {
-      supabase.from('items').delete().eq('id', id).then(() => {});
+      const sb = supabase;
+      sb.from('items').delete().eq('id', id).then(() => {});
+      sb.from('transactions').update({ status: 'CANCELLED' }).eq('item_id', id).then(() => {});
+      try {
+        sb.from('profiles').upsert({
+          id: 'sys-deleted-items',
+          full_name: 'Danh Sách Món Đồ Đã Xóa',
+          role: 'admin',
+          address: JSON.stringify(Array.from(nextDeletedIds)),
+        }).then(() => {});
+      } catch {}
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
     }
   };
 
@@ -1789,30 +1952,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const otherUserId = isCallerGiver ? trans.receiver_id : trans.giver_id;
     const targetItem = getItemById(trans.item_id) || items.find((i) => i.id === trans.item_id);
 
-    // 1. Update transaction status to CANCELLED
+    // 1. Update transaction status to CANCELLED and reset confirmations
     setTransactions((prev) => {
-      const next = prev.map((t) => (t.id === transactionId ? { ...t, status: 'CANCELLED' as TradeStatus } : t));
+      const next = prev.map((t) =>
+        t.id === transactionId
+          ? {
+              ...t,
+              status: 'CANCELLED' as TradeStatus,
+              giver_confirmed: false,
+              receiver_confirmed: false,
+              completed_at: undefined,
+            }
+          : t
+      );
       try {
         localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
       } catch {}
       return next;
     });
 
-    // 2. Check if any other transactions for this item are still ACCEPTED or HANDED_OVER
-    const hasOtherActiveTrade = transactions.some(
-      (t) => t.item_id === trans.item_id && t.id !== transactionId && (t.status === 'ACCEPTED' || t.status === 'HANDED_OVER')
-    );
-
-    if (!hasOtherActiveTrade) {
-      updateItem(trans.item_id, { status: 'ACTIVE' });
-      if (isSupabaseConfigured() && supabase) {
-        supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id).then(() => {});
-      }
+    // 2. Return item to ACTIVE (initial state like newly posted)
+    updateItem(trans.item_id, { status: 'ACTIVE' });
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id).then(() => {});
+      supabase.from('transactions').update({
+        status: 'CANCELLED',
+        giver_confirmed: false,
+        receiver_confirmed: false,
+        completed_at: null,
+      }).eq('id', transactionId).then(() => {});
     }
 
-    // 3. Sync to Supabase
-    if (isSupabaseConfigured() && supabase) {
-      supabase.from('transactions').update({ status: 'CANCELLED' }).eq('id', transactionId).then(() => {});
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kdlc-trades-updated'));
+      window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
     }
 
     // 4. Notifications
@@ -1853,8 +2026,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const cancelNotif: NotificationItem = {
         id: `notif-cancel-${Date.now()}`,
         user_id: otherUserId,
-        title: 'Phiên trao đổi đã được hủy ⚠️',
-        content: `${cancelerName} đã hủy phiên trao đổi món "${targetItem?.title || 'đồ dùng'}". ${reason ? `Lý do: "${reason}". ` : ''}Món đồ đã được mở lại cho hàng chờ.`,
+        title: 'Phiên trao đổi đã được khóa / hủy ⚠️',
+        content: `${cancelerName} đã khóa phiên trao đổi món "${targetItem?.title || 'đồ dùng'}". ${reason ? `Lý do: "${reason}". ` : ''}Món đồ đã được đưa về trạng thái ban đầu để sẵn sàng chia sẻ.`,
         is_read: false,
         action_link: `/items/${trans.item_id}`,
         type: 'trade',
@@ -1868,7 +2041,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: `notif-queue-${Date.now()}`,
           user_id: trans.giver_id,
           title: 'Bạn có thể chọn người tiếp theo trong hàng chờ! 📋',
-          content: `Phiên trao đổi trước đã hủy. Món "${targetItem?.title}" vẫn còn ${remainingWaitlist.length} bạn đang chờ trong danh sách!`,
+          content: `Phiên trao đổi trước đã được khóa. Món "${targetItem?.title}" vẫn còn ${remainingWaitlist.length} bạn đang chờ trong danh sách!`,
           is_read: false,
           action_link: `/items/${trans.item_id}`,
           type: 'trade',
@@ -1876,6 +2049,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
         pushNotification(queuePromptNotif);
       }
+    }
+  };
+
+  const restoreTrade = async (transactionId: string) => {
+    if (currentUser && isUserLocked(currentUser)) {
+      throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng.');
+    }
+    const trans = transactions.find((t) => t.id === transactionId);
+    if (!trans) throw new Error('Không tìm thấy phiên giao dịch');
+
+    const nextStatus: TradeStatus = 'ACCEPTED';
+    setTransactions((prev) => {
+      const next = prev.map((t) => (t.id === transactionId ? { ...t, status: nextStatus, completed_at: undefined } : t));
+      try {
+        localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    updateItem(trans.item_id, { status: 'IN_PROGRESS' });
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('transactions').update({ status: nextStatus, completed_at: null }).eq('id', transactionId).then(() => {});
+      supabase.from('items').update({ status: 'IN_PROGRESS' }).eq('id', trans.item_id).then(() => {});
+    }
+
+    const targetItem = getItemById(trans.item_id) || items.find((i) => i.id === trans.item_id);
+
+    const unfreezeNotif: NotificationItem = {
+      id: `notif-unfreeze-${Date.now()}`,
+      user_id: trans.receiver_id,
+      title: 'Phiên giao dịch đã được mở lại! 🔓',
+      content: `Phiên giao dịch trao đổi món "${targetItem?.title || 'đồ dùng'}" đã được kích hoạt lại. Bạn có thể tiếp tục tiến trình bàn giao.`,
+      is_read: false,
+      action_link: `/trades/${trans.id}`,
+      type: 'trade',
+      created_at: new Date().toISOString(),
+    };
+    pushNotification(unfreezeNotif);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kdlc-trades-updated'));
+      window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
     }
   };
 
@@ -2055,6 +2271,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         advanceTradeStatus,
         confirmTradeHandover,
         cancelTrade,
+        restoreTrade,
         sendTradeMessage,
         reviews,
         submitReview,
@@ -2071,6 +2288,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         resolveReport,
         adminHideItem,
         adminRestoreItem,
+        deletedItemIds,
         isSupabaseMode: isSupabaseConfigured(),
         activeRole: currentUser ? (isUserLocked(currentUser) ? 'guest' : currentUser.role) : 'guest',
       }}

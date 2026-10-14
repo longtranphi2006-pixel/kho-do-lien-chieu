@@ -1226,16 +1226,16 @@ function TradeStepperContent() {
 
             <div className="text-xs text-slate-600 space-y-2">
               <p>
-                Bạn có chắc chắn muốn hủy phiên trao đổi món <strong>"{item?.title}"</strong> không?
+                Bạn có chắc chắn muốn khóa / hủy phiên trao đổi món <strong>&ldquo;{item?.title}&rdquo;</strong> không?
               </p>
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] leading-relaxed">
-                ℹ️ <strong>Lưu ý:</strong> Khi bạn hủy, món đồ sẽ được đưa trở lại Kho Đồ Liên Chiểu ở trạng thái sẵn sàng để các bạn sinh viên khác có thể nhận.
+                ℹ️ <strong>Lưu ý:</strong> Khi bạn khóa / hủy, phiên giao dịch sẽ kết thúc và trạng thái món đồ sẽ được đưa về ban đầu (như lúc mới đăng bài) để sẵn sàng mở lại cho cộng đồng.
               </div>
             </div>
 
             <div className="space-y-1">
               <label className="block text-xs font-semibold text-slate-700">
-                Lý do hủy (tùy chọn)
+                Lý do khóa / hủy (tùy chọn)
               </label>
               <input
                 type="text"
@@ -1266,7 +1266,7 @@ function TradeStepperContent() {
                 disabled={isCancelling}
                 className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer shadow-sm disabled:opacity-50"
               >
-                {isCancelling ? 'Đang hủy...' : 'Đồng ý hủy giao dịch'}
+                {isCancelling ? 'Đang xử lý...' : 'Xác nhận Khóa / Hủy'}
               </button>
             </div>
           </div>
