@@ -207,23 +207,26 @@ export default function ProfilePage() {
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 pt-2">
           {/* Avatar with click to edit */}
-          <div className="relative group cursor-pointer" onClick={handleOpenEdit}>
+          <div className="relative group cursor-pointer shrink-0" onClick={handleOpenEdit}>
             {currentUser.avatar_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={currentUser.avatar_url}
                 alt={currentUser.full_name}
-                className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl object-cover border-2 border-[#0F5B4B] shadow-md shadow-[#0F5B4B]/10 group-hover:opacity-90 transition-opacity"
+                className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl object-cover border-2 border-[#0F5B4B] shadow-md shadow-[#0F5B4B]/10 group-hover:brightness-95 transition-all"
               />
             ) : (
               <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-[#EAF7F2] text-[#0F5B4B] font-bold text-2xl flex items-center justify-center border-2 border-[#0F5B4B]">
                 {currentUser.full_name.charAt(0)}
               </div>
             )}
-            <div className="absolute inset-0 rounded-3xl bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-bold gap-1">
-              <Camera className="w-4 h-4" />
+            
+            {/* Always visible small camera pill on avatar */}
+            <div className="absolute -bottom-1 -left-1 bg-white border border-slate-200 text-[#0F5B4B] px-2 py-0.5 rounded-full shadow-xs flex items-center gap-1 text-[10px] font-bold hover:bg-[#EAF7F2] transition-colors">
+              <Camera className="w-3 h-3 text-[#0F5B4B]" />
               <span>Đổi ảnh</span>
             </div>
+
             {currentUser.is_verified && (
               <div
                 className="absolute -bottom-2 -right-2 bg-[#0F5B4B] text-white p-1.5 rounded-full shadow-md z-10"
@@ -240,6 +243,17 @@ export default function ProfilePage() {
               <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
                 {currentUser.full_name}
               </h1>
+
+              {/* Quick edit button next to name */}
+              <button
+                type="button"
+                onClick={handleOpenEdit}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-[#0F5B4B] border border-[#0F5B4B]/30 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                title="Chỉnh sửa thông tin tài khoản"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Sửa thông tin</span>
+              </button>
 
               {/* Role Badge */}
               {currentUser.role === 'admin' ? (
@@ -279,27 +293,43 @@ export default function ProfilePage() {
             )}
           </div>
 
-          {/* Header Action Buttons */}
-          <div className="flex flex-wrap sm:flex-col items-stretch gap-2 shrink-0 sm:self-center w-full sm:w-auto">
+          {/* Header Action Buttons - Highly Visible */}
+          <div className="flex flex-wrap sm:flex-col items-stretch gap-2.5 shrink-0 sm:self-center w-full sm:w-auto">
             <button
               onClick={handleOpenEdit}
-              className="flex-1 sm:flex-none px-4 py-2.5 rounded-full border border-slate-300 hover:border-[#0F5B4B] bg-white hover:bg-[#EAF7F2] text-slate-700 hover:text-[#0F5B4B] text-xs sm:text-sm font-bold shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+              className="flex-1 sm:flex-none px-5 py-3 rounded-2xl bg-[#0F5B4B] hover:bg-[#0A3F34] text-white text-xs sm:text-sm font-extrabold shadow-md shadow-[#0F5B4B]/25 flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98"
             >
-              <Edit3 className="w-4 h-4 text-[#0F5B4B]" />
+              <Edit3 className="w-4 h-4 stroke-[2.5]" />
               <span>Tùy chỉnh thông tin</span>
             </button>
             <Link
               href="/items/new"
-              className="flex-1 sm:flex-none px-4 py-2.5 rounded-full bg-[#0F5B4B] text-white text-xs sm:text-sm font-bold hover:bg-[#0A3F34] shadow-sm flex items-center justify-center gap-2 transition-all"
+              className="flex-1 sm:flex-none px-5 py-3 rounded-2xl border-2 border-[#0F5B4B] bg-white hover:bg-[#EAF7F2] text-[#0F5B4B] text-xs sm:text-sm font-bold shadow-xs flex items-center justify-center gap-2 transition-all"
             >
-              <Gift className="w-4 h-4" />
+              <Gift className="w-4 h-4 text-[#0F5B4B]" />
               <span>+ Đăng đồ mới</span>
             </Link>
           </div>
         </div>
 
+        {/* Detailed Info Grid Header */}
+        <div className="mt-6 pt-5 border-t border-slate-100 flex items-center justify-between mb-3">
+          <div className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+            <Building className="w-4 h-4 text-[#0F5B4B]" />
+            <span>Thông tin cá nhân & Điểm hẹn</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleOpenEdit}
+            className="text-xs font-bold text-[#0F5B4B] hover:underline flex items-center gap-1 cursor-pointer bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200"
+          >
+            <Edit3 className="w-3 h-3" />
+            <span>Chỉnh sửa</span>
+          </button>
+        </div>
+
         {/* Detailed Info Grid */}
-        <div className="mt-6 pt-5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
           <div className="p-3 rounded-2xl bg-slate-50/80 border border-slate-100 flex items-start gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-emerald-100/70 text-[#0F5B4B] flex items-center justify-center shrink-0 mt-0.5">
               <Hash className="w-4 h-4" />
