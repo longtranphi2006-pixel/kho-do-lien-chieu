@@ -1249,10 +1249,10 @@ export default function ProfilePage() {
                   </span>
                 </div>
 
-                <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-800 text-[11px] flex items-start gap-2">
+                <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-900 text-[11px] leading-relaxed flex items-start gap-2">
                   <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <span>
-                    <strong>Bảo mật thông tin:</strong> Số điện thoại và Email được mã hóa, không công khai với người lạ và chỉ hiển thị khi đôi bên đã xác nhận thỏa thuận giao dịch.
+                    <strong>Bảo mật thông tin:</strong> <strong>Email tài khoản được bảo mật riêng tư tuyệt đối 100% và KHÔNG BAO GIỜ hiển thị cho người dùng khác</strong> (chỉ dùng để đăng nhập và nhận thông báo hệ thống). Số điện thoại chỉ hiển thị khi đôi bên đã xác nhận chọn giao dịch hẹn gặp (nếu bạn bật tùy chọn liên hệ qua điện thoại).
                   </span>
                 </div>
 
@@ -1263,7 +1263,7 @@ export default function ProfilePage() {
                       <label className="block font-bold text-slate-700">
                         Số điện thoại
                       </label>
-                      <span className="text-[10px] text-slate-500 font-semibold">Riêng tư</span>
+                      <span className="text-[10px] text-slate-500 font-semibold">Chỉ hiện khi hẹn gặp</span>
                     </div>
                     <div className="relative">
                       <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -1283,7 +1283,9 @@ export default function ProfilePage() {
                       <label className="block font-bold text-slate-700">
                         Email tài khoản
                       </label>
-                      <span className="text-[10px] text-slate-500 font-semibold">Riêng tư</span>
+                      <span className="text-[10px] text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded font-semibold border border-emerald-200 flex items-center gap-0.5">
+                        <Lock className="w-2.5 h-2.5" /> Ẩn tuyệt đối 100%
+                      </span>
                     </div>
                     <div className="relative">
                       <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -1295,6 +1297,9 @@ export default function ProfilePage() {
                         className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white focus:outline-hidden focus:border-[#0F5B4B]"
                       />
                     </div>
+                    <p className="text-[10px] text-slate-400 italic">
+                      * Email chỉ dùng để đăng nhập & nhận thông báo, không bao giờ lộ cho người khác.
+                    </p>
                   </div>
                 </div>
 
