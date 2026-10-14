@@ -13,7 +13,7 @@ interface ItemCardProps {
 }
 
 export const ItemCard: React.FC<ItemCardProps> = ({ item, showAdminActions = false }) => {
-  const { favorites, toggleFavorite, allUsers } = useAppStore();
+  const { favorites, toggleFavorite, allUsers, transactions } = useAppStore();
   const isFavorited = favorites.includes(item.id);
   const matchedUser = allUsers.find((u) => u.id === item.user_id);
   const donor =
@@ -27,6 +27,10 @@ export const ItemCard: React.FC<ItemCardProps> = ({ item, showAdminActions = fal
     donor?.full_name ||
     'Người dùng';
   const donorAvatar = donor?.avatar_url || item.donor_avatar;
+
+  const waitingCount = transactions.filter(
+    (t) => t.item_id === item.id && t.status === 'REQUESTED'
+  ).length;
 
   const handleFavoriteClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -77,9 +81,15 @@ export const ItemCard: React.FC<ItemCardProps> = ({ item, showAdminActions = fal
           )}
 
           {item.status === 'IN_PROGRESS' && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
               <Clock className="w-3 h-3" />
-              Đang trao đổi
+              Đang hẹn gặp
+            </span>
+          )}
+
+          {waitingCount > 0 && item.status !== 'COMPLETED' && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100/90 text-amber-900 border border-amber-300">
+              ⏳ {waitingCount} chờ
             </span>
           )}
 

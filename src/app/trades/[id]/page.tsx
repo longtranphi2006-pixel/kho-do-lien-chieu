@@ -30,6 +30,7 @@ import {
   Trash2,
   AlertTriangle,
   X,
+  Users,
 } from 'lucide-react';
 import { TradeMessage, Transaction } from '@/types';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
@@ -716,13 +717,23 @@ function TradeStepperContent() {
                   </div>
                 </div>
 
-                <button
-                  disabled
-                  className="w-full py-3 px-4 rounded-xl bg-slate-200 text-slate-500 font-bold text-sm cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  <Lock className="w-4 h-4" />
-                  Đang chờ {giver?.full_name} chấp thuận yêu cầu...
-                </button>
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <button
+                    disabled
+                    className="flex-1 py-3 px-4 rounded-xl bg-slate-200 text-slate-500 font-bold text-xs sm:text-sm cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    <Lock className="w-4 h-4" />
+                    Đang chờ {giver?.full_name} duyệt yêu cầu...
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelModal(true)}
+                    className="py-3 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <XCircle className="w-4 h-4 text-rose-600" />
+                    Hủy yêu cầu nhận đồ
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -934,10 +945,18 @@ function TradeStepperContent() {
             <p className="text-xs text-rose-700 max-w-md mx-auto">
               Một trong hai bên đã hủy giao dịch. Món đồ đã được tự động mở lại trên Kho đồ Liên Chiểu để sinh viên khác tiếp tục nhận.
             </p>
-            <div className="pt-2 flex justify-center gap-3">
+            <div className="pt-2 flex flex-wrap justify-center gap-2.5">
+              {isActuallyGiver && transaction?.item_id && (
+                <Link
+                  href={`/items/${transaction.item_id}`}
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white text-xs sm:text-sm font-bold hover:bg-[#0A3F34] shadow-sm"
+                >
+                  <Users className="w-4 h-4" /> Xem hàng chờ & chọn người khác
+                </Link>
+              )}
               <Link
                 href="/items"
-                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white text-xs sm:text-sm font-bold hover:bg-[#0A3F34] shadow-sm"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-slate-100 text-slate-700 text-xs sm:text-sm font-bold hover:bg-slate-200"
               >
                 Khám phá Kho đồ
               </Link>

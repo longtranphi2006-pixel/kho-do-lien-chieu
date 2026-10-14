@@ -877,6 +877,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const receiverId = currentUser.id;
     const receiverName = currentUser.full_name;
 
+    // Check if user already has an active or pending request
+    const myAliasIds = getUserAliasIds(currentUser.id);
+    const existingActive = transactions.find(
+      (t) => t.item_id === params.itemId && myAliasIds.includes(t.receiver_id) && t.status !== 'CANCELLED'
+    );
+    if (existingActive) {
+      return existingActive;
+    }
+
     const newTransaction: Transaction = {
       id: `tr-${Date.now()}`,
       item_id: params.itemId,
@@ -890,7 +899,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setTransactions((prev) => [newTransaction, ...prev]);
-    updateItem(params.itemId, { status: 'IN_PROGRESS' });
+
+    // Note: Do not lock item into IN_PROGRESS immediately on request!
+    // The item remains open so multiple students can join the queue until the owner chooses one.
 
     if (isSupabaseConfigured() && supabase) {
       const sb = supabase;
@@ -899,7 +910,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           await ensureProfileInSupabase(targetItem.donor || targetItem.user_id);
           await ensureProfileInSupabase(currentUser || receiverId);
           await sb.from('transactions').upsert(newTransaction);
-          await sb.from('items').update({ status: 'IN_PROGRESS' }).eq('id', params.itemId);
           await sb.from('notifications').upsert(donorNotif);
         } catch (err) {
           console.error('Supabase createTradeRequest error:', err);
@@ -908,13 +918,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       pushTrade();
     }
 
+    const currentWaitCount = transactions.filter(
+      (t) => t.item_id === params.itemId && t.status !== 'CANCELLED'
+    ).length + 1;
+
     const donorNotif: NotificationItem = {
       id: `notif-${Date.now()}`,
       user_id: targetItem.user_id,
       title: 'Đề nghị nhận đồ mới!',
-      content: `${receiverName} muốn nhận món "${targetItem.title}".`,
+      content: `${receiverName} muốn nhận món "${targetItem.title}" (Hàng chờ hiện có: ${currentWaitCount} người). Hãy chọn bạn phù hợp để trao đồ!`,
       is_read: false,
-      action_link: `/trades/${newTransaction.id}`,
+      action_link: `/items/${targetItem.id}`,
       type: 'trade',
       created_at: new Date().toISOString(),
     };
@@ -923,14 +937,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newTransaction;
   };
 
-    const pushNotification = (notif: NotificationItem) => {
-      setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
-      if (isSupabaseConfigured() && supabase) {
-        supabase.from('notifications').upsert(notif).then(() => {});
-      }
-    };
+  const pushNotification = (notif: NotificationItem) => {
+    setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('notifications').upsert(notif).then(() => {});
+    }
+  };
 
-    const advanceTradeStatus = (transactionId: string, nextStatus: TradeStatus) => {
+  const advanceTradeStatus = (transactionId: string, nextStatus: TradeStatus) => {
     setTransactions((prev) =>
       prev.map((t) => {
         if (t.id !== transactionId) return t;
@@ -954,11 +968,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetItem = currentTrans ? (getItemById(currentTrans.item_id) || items.find((i) => i.id === currentTrans.item_id)) : null;
 
     if (nextStatus === 'ACCEPTED' && currentTrans) {
+      // Mark item as IN_PROGRESS when owner accepts a requester
+      updateItem(currentTrans.item_id, { status: 'IN_PROGRESS' });
+      if (isSupabaseConfigured() && supabase) {
+        supabase.from('items').update({ status: 'IN_PROGRESS' }).eq('id', currentTrans.item_id).then(() => {});
+      }
+
+      const giverName = currentUser?.full_name || 'Chủ món đồ';
       const acceptNotif: NotificationItem = {
         id: `notif-acc-${Date.now()}`,
         user_id: currentTrans.receiver_id,
-        title: 'Chủ đồ đã duyệt yêu cầu nhận đồ! 🎉',
-        content: `Yêu cầu nhận món "${targetItem?.title || 'đồ dùng'}" đã được chủ đồ chấp thuận. Hãy chuẩn bị gặp trao đồ tại điểm hẹn!`,
+        title: 'Chủ đồ đã duyệt yêu cầu của bạn! 🎉',
+        content: `${giverName} đã chọn bạn để trao nhận món "${targetItem?.title || 'đồ dùng'}". Hãy bấm vào để xem điểm hẹn và tiến trình trao đồ!`,
         is_read: false,
         action_link: `/trades/${currentTrans.id}`,
         type: 'trade',
@@ -967,31 +988,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       pushNotification(acceptNotif);
     }
 
-    if (nextStatus === 'COMPLETED') {
+    if (nextStatus === 'COMPLETED' && currentTrans) {
       const trans = currentTrans;
-      if (trans) {
-        updateItem(trans.item_id, { status: 'COMPLETED' });
-        setProfiles((prev) =>
-          prev.map((p) => {
-            if (p.id === trans.giver_id) {
-              return {
-                ...p,
-                items_given_count: p.items_given_count + 1,
-                completed_trades_count: p.completed_trades_count + 1,
-                reputation_score: p.reputation_score + 20,
-              };
-            }
-            if (p.id === trans.receiver_id) {
-              return {
-                ...p,
-                completed_trades_count: p.completed_trades_count + 1,
-                reputation_score: p.reputation_score + 10,
-              };
-            }
-            return p;
-          })
-        );
+      updateItem(trans.item_id, { status: 'COMPLETED' });
+      if (isSupabaseConfigured() && supabase) {
+        supabase.from('items').update({ status: 'COMPLETED' }).eq('id', trans.item_id).then(() => {});
       }
+
+      // Notify other remaining waitlisted users that the item has been completed
+      const otherPending = transactions.filter(
+        (t) => t.item_id === trans.item_id && t.id !== transactionId && t.status === 'REQUESTED'
+      );
+      otherPending.forEach((waitReq) => {
+        const notif: NotificationItem = {
+          id: `notif-closed-${Date.now()}-${waitReq.id}`,
+          user_id: waitReq.receiver_id,
+          title: 'Món đồ đã được trao cho bạn khác',
+          content: `Món "${targetItem?.title || 'đồ dùng'}" trong hàng chờ của bạn đã được trao tặng thành công. Cảm ơn bạn đã quan tâm!`,
+          is_read: false,
+          action_link: `/items`,
+          type: 'trade',
+          created_at: new Date().toISOString(),
+        };
+        pushNotification(notif);
+      });
+
+      setProfiles((prev) =>
+        prev.map((p) => {
+          if (p.id === trans.giver_id) {
+            return {
+              ...p,
+              items_given_count: (p.items_given_count || 0) + 1,
+              completed_trades_count: (p.completed_trades_count || 0) + 1,
+              reputation_score: (p.reputation_score || 50) + 20,
+            };
+          }
+          if (p.id === trans.receiver_id) {
+            return {
+              ...p,
+              completed_trades_count: (p.completed_trades_count || 0) + 1,
+              reputation_score: (p.reputation_score || 50) + 10,
+            };
+          }
+          return p;
+        })
+      );
     }
   };
 
@@ -1160,17 +1201,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const isCallerReceiver = myAliasIds.includes(trans.receiver_id);
 
     // Rule: "chỉ dc hủy trước bước xác nhận của ng kia"
-    const otherAlreadyConfirmed = isCallerGiver
-      ? Boolean(trans.receiver_confirmed)
-      : isCallerReceiver
-      ? Boolean(trans.giver_confirmed)
-      : Boolean(trans.giver_confirmed || trans.receiver_confirmed);
+    // If it's a pending waitlist request (REQUESTED), it can be cancelled freely by either party!
+    const isWaitlistRequest = trans.status === 'REQUESTED';
 
-    if (otherAlreadyConfirmed) {
-      throw new Error('Không thể hủy giao dịch vì đối phương đã bấm xác nhận bàn giao!');
-    }
-    if (trans.status === 'COMPLETED') {
-      throw new Error('Không thể hủy giao dịch đã hoàn tất!');
+    if (!isWaitlistRequest) {
+      const otherAlreadyConfirmed = isCallerGiver
+        ? Boolean(trans.receiver_confirmed)
+        : isCallerReceiver
+        ? Boolean(trans.giver_confirmed)
+        : Boolean(trans.giver_confirmed || trans.receiver_confirmed);
+
+      if (otherAlreadyConfirmed) {
+        throw new Error('Không thể hủy giao dịch vì đối phương đã bấm xác nhận bàn giao!');
+      }
+      if (trans.status === 'COMPLETED') {
+        throw new Error('Không thể hủy giao dịch đã hoàn tất!');
+      }
     }
 
     const cancelerName = currentUser?.full_name || 'Một bên tham gia';
@@ -1182,27 +1228,85 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((t) => (t.id === transactionId ? { ...t, status: 'CANCELLED' as TradeStatus } : t))
     );
 
-    // 2. Restore item status back to ACTIVE so other students can request it
-    updateItem(trans.item_id, { status: 'ACTIVE' });
+    // 2. Check if any other transactions for this item are still ACCEPTED or HANDED_OVER
+    const hasOtherActiveTrade = transactions.some(
+      (t) => t.item_id === trans.item_id && t.id !== transactionId && (t.status === 'ACCEPTED' || t.status === 'HANDED_OVER')
+    );
+
+    if (!hasOtherActiveTrade) {
+      updateItem(trans.item_id, { status: 'ACTIVE' });
+      if (isSupabaseConfigured() && supabase) {
+        supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id).then(() => {});
+      }
+    }
 
     // 3. Sync to Supabase
     if (isSupabaseConfigured() && supabase) {
       supabase.from('transactions').update({ status: 'CANCELLED' }).eq('id', transactionId).then(() => {});
-      supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id).then(() => {});
     }
 
-    // 4. Notify other party
-    const cancelNotif: NotificationItem = {
-      id: `notif-cancel-${Date.now()}`,
-      user_id: otherUserId,
-      title: 'Phiên trao đổi đã được hủy ⚠️',
-      content: `${cancelerName} đã hủy phiên trao đổi món "${targetItem?.title || 'đồ dùng'}". ${reason ? `Lý do: "${reason}". ` : ''}Món đồ đã được mở lại công khai.`,
-      is_read: false,
-      action_link: `/items/${trans.item_id}`,
-      type: 'trade',
-      created_at: new Date().toISOString(),
-    };
-    pushNotification(cancelNotif);
+    // 4. Notifications
+    const remainingWaitlist = transactions.filter(
+      (t) => t.item_id === trans.item_id && t.id !== transactionId && t.status === 'REQUESTED'
+    );
+
+    if (isWaitlistRequest) {
+      if (isCallerReceiver) {
+        // Requester voluntarily leaves the queue
+        const cancelNotif: NotificationItem = {
+          id: `notif-cancel-${Date.now()}`,
+          user_id: trans.giver_id,
+          title: 'Một yêu cầu trong hàng chờ đã được rút lại',
+          content: `${cancelerName} đã hủy yêu cầu nhận món "${targetItem?.title || 'đồ dùng'}".`,
+          is_read: false,
+          action_link: `/items/${trans.item_id}`,
+          type: 'trade',
+          created_at: new Date().toISOString(),
+        };
+        pushNotification(cancelNotif);
+      } else {
+        // Owner rejects/cancels this waitlist request
+        const rejectNotif: NotificationItem = {
+          id: `notif-cancel-${Date.now()}`,
+          user_id: trans.receiver_id,
+          title: 'Yêu cầu nhận đồ chưa được duyệt',
+          content: `Chủ món đồ "${targetItem?.title || 'đồ dùng'}" chưa thể trao cho bạn lần này.${reason ? ` Lý do: "${reason}".` : ''}`,
+          is_read: false,
+          action_link: `/items/${trans.item_id}`,
+          type: 'trade',
+          created_at: new Date().toISOString(),
+        };
+        pushNotification(rejectNotif);
+      }
+    } else {
+      // Active trade cancelled
+      const cancelNotif: NotificationItem = {
+        id: `notif-cancel-${Date.now()}`,
+        user_id: otherUserId,
+        title: 'Phiên trao đổi đã được hủy ⚠️',
+        content: `${cancelerName} đã hủy phiên trao đổi món "${targetItem?.title || 'đồ dùng'}". ${reason ? `Lý do: "${reason}". ` : ''}Món đồ đã được mở lại cho hàng chờ.`,
+        is_read: false,
+        action_link: `/items/${trans.item_id}`,
+        type: 'trade',
+        created_at: new Date().toISOString(),
+      };
+      pushNotification(cancelNotif);
+
+      // Notify owner that remaining waitlist members can now be picked!
+      if (!isCallerGiver && remainingWaitlist.length > 0) {
+        const queuePromptNotif: NotificationItem = {
+          id: `notif-queue-${Date.now()}`,
+          user_id: trans.giver_id,
+          title: 'Bạn có thể chọn người tiếp theo trong hàng chờ! 📋',
+          content: `Phiên trao đổi trước đã hủy. Món "${targetItem?.title}" vẫn còn ${remainingWaitlist.length} bạn đang chờ trong danh sách!`,
+          is_read: false,
+          action_link: `/items/${trans.item_id}`,
+          type: 'trade',
+          created_at: new Date().toISOString(),
+        };
+        pushNotification(queuePromptNotif);
+      }
+    }
   };
 
   const sendTradeMessage = async (transactionId: string, content: string) => {
