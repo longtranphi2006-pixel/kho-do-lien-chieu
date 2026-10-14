@@ -109,7 +109,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (savedReviews) setReviews(JSON.parse(savedReviews));
 
       const savedNotifs = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
-      if (savedNotifs) setNotifications(JSON.parse(savedNotifs));
+      if (savedNotifs) {
+        const parsed = JSON.parse(savedNotifs) as NotificationItem[];
+        const cleanedNotifs = parsed.filter(
+          (n) => !n.title?.includes('Tin nhắn mới từ 18.Trần Lê Phi Long') && !n.title?.includes('Tin nhắn mới từ Trần Đức Long')
+        );
+        setNotifications(cleanedNotifs);
+      }
 
       const savedFavs = localStorage.getItem(STORAGE_KEYS.FAVORITES);
       if (savedFavs) setFavorites(JSON.parse(savedFavs));
@@ -1197,18 +1203,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supabase.from('transactions').update({ note: updatedNote }).eq('id', transactionId).then(() => {});
     }
 
-    const otherUserId = senderId === trans.giver_id ? trans.receiver_id : trans.giver_id;
-    const msgNotif: NotificationItem = {
-      id: `notif-msg-${Date.now()}`,
-      user_id: otherUserId,
-      title: `Tin nhắn mới từ ${senderName} 💬`,
-      content: content.trim().length > 60 ? `${content.trim().slice(0, 60)}...` : content.trim(),
-      is_read: false,
-      action_link: `/trades/${transactionId}`,
-      type: 'trade',
-      created_at: new Date().toISOString(),
-    };
-    pushNotification(msgNotif);
+    // Determine sender aliases to prevent sending notification to oneself
+    const senderAliases = new Set<string>([senderId]);
+    if (currentUser) {
+      senderAliases.add(currentUser.id);
+      profiles
+        .filter(
+          (u) =>
+            (u.email && currentUser.email && u.email.toLowerCase() === currentUser.email.toLowerCase()) ||
+            (u.full_name && currentUser.full_name && u.full_name === currentUser.full_name && u.full_name !== 'Thành viên Liên Chiểu')
+        )
+        .forEach((u) => senderAliases.add(u.id));
+      if (currentUser.email?.toLowerCase().includes('long') || currentUser.full_name?.includes('Long')) {
+        senderAliases.add('usr-oauth-1791897070645');
+        senderAliases.add('usr-oauth-1791902102209');
+        senderAliases.add('usr-oauth-1791899728239');
+      }
+    }
+
+    // Determine other user's ID
+    let otherUserId = senderAliases.has(trans.giver_id) ? trans.receiver_id : trans.giver_id;
+    if (senderAliases.has(otherUserId)) {
+      otherUserId = senderAliases.has(trans.receiver_id) ? trans.giver_id : trans.receiver_id;
+    }
+
+    // Only create notification if recipient is genuinely NOT the sender
+    if (!senderAliases.has(otherUserId) && otherUserId) {
+      const msgNotif: NotificationItem = {
+        id: `notif-msg-${Date.now()}`,
+        user_id: otherUserId,
+        title: `Tin nhắn mới từ ${senderName} 💬`,
+        content: content.trim().length > 60 ? `${content.trim().slice(0, 60)}...` : content.trim(),
+        is_read: false,
+        action_link: `/trades/${transactionId}`,
+        type: 'trade',
+        created_at: new Date().toISOString(),
+      };
+      pushNotification(msgNotif);
+    }
   };
 
   const submitReview = (params: {

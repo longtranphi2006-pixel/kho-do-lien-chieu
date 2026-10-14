@@ -56,24 +56,35 @@ export const Navbar: React.FC = () => {
     return ids;
   }, [currentUser, allUsers]);
 
-  const myTransactionIds = React.useMemo(() => {
-    if (!currentUser) return new Set<string>();
-    return new Set(
-      transactions
-        .filter((t) => myUserIds.has(t.giver_id) || myUserIds.has(t.receiver_id))
-        .map((t) => t.id)
-    );
-  }, [currentUser, myUserIds, transactions]);
+  const myUserNames = React.useMemo(() => {
+    const names = new Set<string>();
+    if (currentUser?.full_name) {
+      names.add(currentUser.full_name.toLowerCase());
+    }
+    allUsers
+      .filter((u) => myUserIds.has(u.id) && u.full_name && u.full_name !== 'Thành viên Liên Chiểu')
+      .forEach((u) => names.add(u.full_name.toLowerCase()));
+    return names;
+  }, [currentUser, myUserIds, allUsers]);
 
-  // Filter notifications for this user (empty for guests)
-  const myNotifications = currentUser
-    ? notifications.filter(
-        (n) =>
-          myUserIds.has(n.user_id) ||
-          n.user_id === 'usr-admin-bql' ||
-          (n.action_link && Array.from(myTransactionIds).some((tid) => n.action_link?.includes(tid)))
-      )
-    : [];
+  // Filter notifications strictly for this user (empty for guests)
+  const myNotifications = React.useMemo(() => {
+    if (!currentUser) return [];
+    return notifications.filter((n) => {
+      // Must be sent to one of currentUser's IDs, or admin if user is admin
+      const isForMe = myUserIds.has(n.user_id) || (currentUser.role === 'admin' && n.user_id === 'usr-admin-bql');
+      if (!isForMe) return false;
+
+      // Never show notifications of messages sent by oneself
+      if (n.title?.startsWith('Tin nhắn mới từ')) {
+        const lowerTitle = n.title.toLowerCase();
+        for (const name of myUserNames) {
+          if (name && lowerTitle.includes(name)) return false;
+        }
+      }
+      return true;
+    });
+  }, [notifications, currentUser, myUserIds, myUserNames]);
   const unreadCount = myNotifications.filter((n) => !n.is_read).length;
   const urgentTradeNotifs = myNotifications.filter((n) => n.type === 'trade' && !n.is_read);
 

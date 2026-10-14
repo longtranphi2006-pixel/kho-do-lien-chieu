@@ -10,7 +10,7 @@ export const BottomNav: React.FC = () => {
   const pathname = usePathname();
   const { notifications, currentUser } = useAppStore();
   const myNotifications = currentUser
-    ? notifications.filter((n) => n.user_id === currentUser.id)
+    ? notifications.filter((n) => n.user_id === currentUser.id && (!currentUser.full_name || !n.title?.includes(currentUser.full_name)))
     : [];
   const unreadCount = myNotifications.filter((n) => !n.is_read).length;
 
