@@ -19,6 +19,7 @@ interface AppContextType {
     department?: string;
     student_id?: string;
   }) => Profile;
+  updateProfile: (updates: Partial<Omit<Profile, 'id' | 'created_at'>>) => void;
   items: Item[];
   getItemById: (id: string) => Item | undefined;
   addItem: (newItem: Omit<Item, 'id' | 'created_at' | 'favorites_count'>) => Item;
@@ -620,6 +621,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     return newProfile;
+  };
+
+  const updateProfile = (updates: Partial<Omit<Profile, 'id' | 'created_at'>>) => {
+    if (!currentUser) return;
+    const updatedUser: Profile = {
+      ...currentUser,
+      ...updates,
+    };
+
+    setProfiles((prev) => {
+      const exists = prev.some((p) => p.id === currentUser.id);
+      const list = exists
+        ? prev.map((p) => (p.id === currentUser.id ? updatedUser : p))
+        : [...prev, updatedUser];
+      try {
+        localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(list));
+      } catch {}
+      return list;
+    });
+
+    // If full_name or avatar_url changed, also update donor info on user's posted items
+    if (updates.full_name || updates.avatar_url) {
+      setItems((prev) => {
+        const nextItems = prev.map((item) => {
+          if (item.user_id === currentUser.id) {
+            return {
+              ...item,
+              donor_name: updates.full_name || item.donor_name,
+              donor_avatar: updates.avatar_url || item.donor_avatar,
+              donor: {
+                ...(item.donor || updatedUser),
+                full_name: updates.full_name || (item.donor?.full_name ?? updatedUser.full_name),
+                avatar_url: updates.avatar_url || (item.donor?.avatar_url ?? updatedUser.avatar_url),
+              },
+            };
+          }
+          return item;
+        });
+        try {
+          localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(nextItems));
+        } catch {}
+        return nextItems;
+      });
+    }
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('profiles').update(updates).eq('id', currentUser.id).then(() => {});
+    }
   };
 
   const getItemById = (id: string): Item | undefined => {
@@ -1324,6 +1373,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loginWithOAuth,
         logout,
         registerUser,
+        updateProfile,
         items,
         getItemById,
         addItem,
