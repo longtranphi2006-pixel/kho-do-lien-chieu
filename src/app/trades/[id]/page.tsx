@@ -491,11 +491,11 @@ function TradeStepperContent() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Bên Cho (Người A)
+                Bên Cho
               </span>
               {effectiveRole === 'giver' && (
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0F5B4B] text-white font-bold">
-                  Góc nhìn hiện tại
+                  Bạn
                 </span>
               )}
             </div>
@@ -549,11 +549,11 @@ function TradeStepperContent() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Bên Nhận (Người B)
+                Bên Nhận
               </span>
               {effectiveRole === 'receiver' && (
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-600 text-white font-bold">
-                  Góc nhìn hiện tại
+                  Bạn
                 </span>
               )}
             </div>
