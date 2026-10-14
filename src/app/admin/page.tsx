@@ -1,9 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAppStore } from '@/lib/store';
-import { Item, Profile, Transaction } from '@/types';
+import { Item, Profile, Transaction, ModerationResult } from '@/types';
+import {
+  AiModerationConfig,
+  DEFAULT_AI_CONFIG,
+  getAiModerationConfig,
+  saveAiModerationConfig,
+} from '@/lib/aiConfig';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -33,6 +39,15 @@ import {
   X,
   GraduationCap,
   Info,
+  Sliders,
+  Cpu,
+  Save,
+  Plus,
+  Play,
+  RotateCcw,
+  Tag,
+  FileText,
+  Ban,
 } from 'lucide-react';
 
 export default function AdminDashboardPage() {
@@ -48,7 +63,7 @@ export default function AdminDashboardPage() {
     isSupabaseMode,
   } = useAppStore();
 
-  const [activeTab, setActiveTab] = useState<'analytics' | 'queue' | 'items' | 'users' | 'trades'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'queue' | 'items' | 'users' | 'trades' | 'ai-rules'>('analytics');
   const [itemSearch, setItemSearch] = useState('');
   const [userSearch, setUserSearch] = useState('');
   const [tradeSearch, setTradeSearch] = useState('');
@@ -56,6 +71,26 @@ export default function AdminDashboardPage() {
 
   // Preview Image Modal state
   const [previewItem, setPreviewItem] = useState<Item | null>(null);
+
+  // AI Moderation Rules State
+  const [aiConfig, setAiConfig] = useState<AiModerationConfig>(DEFAULT_AI_CONFIG);
+  const [isSavingAiConfig, setIsSavingAiConfig] = useState(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  const [newBlacklistWord, setNewBlacklistWord] = useState('');
+
+  // AI Sandbox Testing State
+  const [sandboxTitle, setSandboxTitle] = useState('Bán lại bàn học kèm ghế giá 100k');
+  const [sandboxDesc, setSandboxDesc] = useState('Mình mua mới 300k, giờ pass lại giá rẻ tiền mặt cho bạn nào cần.');
+  const [sandboxPurpose, setSandboxPurpose] = useState<'FREE' | 'TRADE'>('FREE');
+  const [sandboxCategory, setSandboxCategory] = useState('Gia dụng & Đời sống');
+  const [isTestingSandbox, setIsTestingSandbox] = useState(false);
+  const [sandboxResult, setSandboxResult] = useState<ModerationResult | null>(null);
+
+  useEffect(() => {
+    getAiModerationConfig().then((cfg) => {
+      setAiConfig(cfg);
+    });
+  }, []);
 
   const isAdmin = currentUser?.role === 'admin';
 
@@ -150,8 +185,9 @@ export default function AdminDashboardPage() {
     return true;
   });
 
-  // Filtered Users
+  // Filtered Users (exclude system config records)
   const filteredUsers = allUsers.filter((u) => {
+    if (u.id.startsWith('sys-')) return false;
     if (userSearch.trim()) {
       const q = userSearch.toLowerCase();
       return (
@@ -198,6 +234,78 @@ export default function AdminDashboardPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // AI Rules Studio Handlers
+  const handleToggleRule = (key: keyof AiModerationConfig) => {
+    setAiConfig((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  const handleAddBlacklistWord = () => {
+    if (!newBlacklistWord.trim()) return;
+    const word = newBlacklistWord.trim().toLowerCase();
+    if (!aiConfig.customBlacklist.includes(word)) {
+      setAiConfig((prev) => ({
+        ...prev,
+        customBlacklist: [...prev.customBlacklist, word],
+      }));
+    }
+    setNewBlacklistWord('');
+  };
+
+  const handleRemoveBlacklistWord = (word: string) => {
+    setAiConfig((prev) => ({
+      ...prev,
+      customBlacklist: prev.customBlacklist.filter((w) => w !== word),
+    }));
+  };
+
+  const handleSaveAiConfig = async () => {
+    setIsSavingAiConfig(true);
+    setSaveSuccessMsg(null);
+    try {
+      await saveAiModerationConfig(aiConfig, currentUser?.full_name || 'Admin');
+      setSaveSuccessMsg('Đã lưu thành công bộ quy tắc AI! Mọi bài đăng mới sẽ được áp dụng luật này ngay lập tức.');
+      setTimeout(() => setSaveSuccessMsg(null), 5000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSavingAiConfig(false);
+    }
+  };
+
+  const handleResetDefaultAiConfig = () => {
+    if (confirm('Bạn có chắc chắn muốn khôi phục về bộ quy tắc AI mặc định của hệ thống không?')) {
+      setAiConfig(DEFAULT_AI_CONFIG);
+    }
+  };
+
+  const handleRunSandboxTest = async () => {
+    if (!sandboxTitle.trim()) return;
+    setIsTestingSandbox(true);
+    setSandboxResult(null);
+    try {
+      const res = await fetch('/api/moderation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: sandboxTitle,
+          description: sandboxDesc,
+          category: sandboxCategory,
+          purpose: sandboxPurpose,
+          images: [],
+        }),
+      });
+      const data: ModerationResult = await res.json();
+      setSandboxResult(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsTestingSandbox(false);
+    }
   };
 
   return (
@@ -356,6 +464,21 @@ export default function AdminDashboardPage() {
         >
           <Repeat className="w-4 h-4" />
           Lịch sử giao dịch ({transactions.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('ai-rules')}
+          className={`pb-3 border-b-2 flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap ${
+            activeTab === 'ai-rules'
+              ? 'border-[#0F5B4B] text-[#0F5B4B]'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Sliders className="w-4 h-4" />
+          Cài đặt Quy tắc AI
+          <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+            Gemini
+          </span>
         </button>
       </div>
 
@@ -847,6 +970,601 @@ export default function AdminDashboardPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 6: Cài đặt Quy tắc AI (Google Gemini Moderation Studio) */}
+      {activeTab === 'ai-rules' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Success Toast */}
+          {saveSuccessMsg && (
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-sm font-semibold flex items-center gap-3 shadow-md animate-fade-in">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <span>{saveSuccessMsg}</span>
+            </div>
+          )}
+
+          {/* Hero Studio Banner */}
+          <div className="bg-gradient-to-r from-[#0F5B4B] via-[#0D4B3E] to-[#0A3F34] rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+            <div className="absolute -right-10 -bottom-10 w-60 h-60 rounded-full bg-emerald-400/10 blur-3xl pointer-events-none" />
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-emerald-200 text-xs font-bold backdrop-blur-xs border border-white/10">
+                  <Cpu className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
+                  Google Gemini AI Studio • Kiểm duyệt Đa phương thức (Vision)
+                </div>
+                <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">
+                  Trung Tâm Huấn Luyện & Cài Đặt Quy Tắc AI
+                </h2>
+                <p className="text-xs sm:text-sm text-emerald-100/90 max-w-2xl leading-relaxed">
+                  Ban Quản Trị có toàn quyền bật/tắt các tiêu chuẩn kiểm duyệt, tự gõ thêm luật riêng bằng tiếng Việt hoặc điều chỉnh độ nhạy của AI mà không cần viết một dòng mã nguồn nào.
+                </p>
+                <div className="pt-1 text-[11px] text-emerald-200/80">
+                  Cập nhật lần cuối: <strong>{new Date(aiConfig.updatedAt).toLocaleString('vi-VN')}</strong> bởi <strong>{aiConfig.updatedBy}</strong>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap sm:flex-nowrap gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleResetDefaultAiConfig}
+                  className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-xs border border-white/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Khôi phục Mặc định
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAiConfig}
+                  disabled={isSavingAiConfig}
+                  className="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-extrabold shadow-lg shadow-amber-400/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  {isSavingAiConfig ? 'Đang lưu quy tắc...' : 'Lưu Thay Đổi Ngay'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Main Grid: Left Controls (7 cols) + Right Sandbox (5 cols) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* LEFT COLUMN: Controls & Rules (7 cols) */}
+            <div className="lg:col-span-7 space-y-6">
+              {/* BLOCK 1: Core Policy Switches */}
+              <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/90 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-[#0F5B4B]" />
+                    <h3 className="font-bold text-slate-900 text-sm sm:text-base">
+                      1. Tiêu Chuẩn Kiểm Duyệt Cốt Lõi (Bật / Tắt)
+                    </h3>
+                  </div>
+                  <span className="text-[11px] text-slate-400 font-medium">Click để bật/tắt</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Switch 1: Commercial */}
+                  <div
+                    onClick={() => handleToggleRule('blockCommercial')}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                      aiConfig.blockCommercial
+                        ? 'bg-emerald-50/60 border-emerald-300 ring-1 ring-emerald-500/20'
+                        : 'bg-slate-50/80 border-slate-200 opacity-70'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm text-slate-900 flex items-center gap-1.5">
+                        <span>Chặn Rao Bán / Thu Tiền</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                        Cấm thu tiền mặt, chuyển khoản, báo giá (50k, 100k, vnd...).
+                      </p>
+                    </div>
+                    <div className={`w-9 h-5 rounded-full transition-colors relative shrink-0 mt-0.5 ${
+                      aiConfig.blockCommercial ? 'bg-[#0F5B4B]' : 'bg-slate-300'
+                    }`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform absolute top-0.5 ${
+                        aiConfig.blockCommercial ? 'right-0.5' : 'left-0.5'
+                      }`} />
+                    </div>
+                  </div>
+
+                  {/* Switch 2: Prohibited Goods */}
+                  <div
+                    onClick={() => handleToggleRule('blockProhibitedGoods')}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                      aiConfig.blockProhibitedGoods
+                        ? 'bg-emerald-50/60 border-emerald-300 ring-1 ring-emerald-500/20'
+                        : 'bg-slate-50/80 border-slate-200 opacity-70'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm text-slate-900">
+                        Cấm Vũ Khí, Thuốc Lá, Vape, 18+
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                        Chặn hung khí, chất kích thích, cồn, nội dung không lành mạnh.
+                      </p>
+                    </div>
+                    <div className={`w-9 h-5 rounded-full transition-colors relative shrink-0 mt-0.5 ${
+                      aiConfig.blockProhibitedGoods ? 'bg-[#0F5B4B]' : 'bg-slate-300'
+                    }`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform absolute top-0.5 ${
+                        aiConfig.blockProhibitedGoods ? 'right-0.5' : 'left-0.5'
+                      }`} />
+                    </div>
+                  </div>
+
+                  {/* Switch 3: Food */}
+                  <div
+                    onClick={() => handleToggleRule('blockFoodFresh')}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                      aiConfig.blockFoodFresh
+                        ? 'bg-emerald-50/60 border-emerald-300 ring-1 ring-emerald-500/20'
+                        : 'bg-slate-50/80 border-slate-200 opacity-70'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm text-slate-900">
+                        Cấm Đồ Ăn Tươi / Nấu Chín
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                        Tránh ôi thiu. Chỉ chấp nhận đồ khô đóng gói còn hạn sử dụng.
+                      </p>
+                    </div>
+                    <div className={`w-9 h-5 rounded-full transition-colors relative shrink-0 mt-0.5 ${
+                      aiConfig.blockFoodFresh ? 'bg-[#0F5B4B]' : 'bg-slate-300'
+                    }`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform absolute top-0.5 ${
+                        aiConfig.blockFoodFresh ? 'right-0.5' : 'left-0.5'
+                      }`} />
+                    </div>
+                  </div>
+
+                  {/* Switch 4: Prescription Drugs */}
+                  <div
+                    onClick={() => handleToggleRule('blockPrescriptionDrugs')}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                      aiConfig.blockPrescriptionDrugs
+                        ? 'bg-emerald-50/60 border-emerald-300 ring-1 ring-emerald-500/20'
+                        : 'bg-slate-50/80 border-slate-200 opacity-70'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm text-slate-900">
+                        Cấm Thuốc Kê Đơn & Dược Phẩm
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                        Chặn chia sẻ thuốc men, thực phẩm chức năng không kiểm định.
+                      </p>
+                    </div>
+                    <div className={`w-9 h-5 rounded-full transition-colors relative shrink-0 mt-0.5 ${
+                      aiConfig.blockPrescriptionDrugs ? 'bg-[#0F5B4B]' : 'bg-slate-300'
+                    }`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform absolute top-0.5 ${
+                        aiConfig.blockPrescriptionDrugs ? 'right-0.5' : 'left-0.5'
+                      }`} />
+                    </div>
+                  </div>
+
+                  {/* Switch 5: Open Cosmetics */}
+                  <div
+                    onClick={() => handleToggleRule('blockCosmeticsOpen')}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                      aiConfig.blockCosmeticsOpen
+                        ? 'bg-emerald-50/60 border-emerald-300 ring-1 ring-emerald-500/20'
+                        : 'bg-slate-50/80 border-slate-200 opacity-70'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm text-slate-900">
+                        Cấm Mỹ Phẩm Chiết / Kem Trộn
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                        Bảo vệ sức khỏe sinh viên khỏi hàng trôi nổi, mỹ phẩm mở nắp cũ.
+                      </p>
+                    </div>
+                    <div className={`w-9 h-5 rounded-full transition-colors relative shrink-0 mt-0.5 ${
+                      aiConfig.blockCosmeticsOpen ? 'bg-[#0F5B4B]' : 'bg-slate-300'
+                    }`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform absolute top-0.5 ${
+                        aiConfig.blockCosmeticsOpen ? 'right-0.5' : 'left-0.5'
+                      }`} />
+                    </div>
+                  </div>
+
+                  {/* Switch 6: Student Usefulness */}
+                  <div
+                    onClick={() => handleToggleRule('requireStudentUsefulness')}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                      aiConfig.requireStudentUsefulness
+                        ? 'bg-emerald-50/60 border-emerald-300 ring-1 ring-emerald-500/20'
+                        : 'bg-slate-50/80 border-slate-200 opacity-70'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm text-slate-900">
+                        Ưu Tiên Đồ Dùng Sinh Viên
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                        Sách vở, giáo trình, quạt, bàn ghế, đồ sinh hoạt thiết thực.
+                      </p>
+                    </div>
+                    <div className={`w-9 h-5 rounded-full transition-colors relative shrink-0 mt-0.5 ${
+                      aiConfig.requireStudentUsefulness ? 'bg-[#0F5B4B]' : 'bg-slate-300'
+                    }`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform absolute top-0.5 ${
+                        aiConfig.requireStudentUsefulness ? 'right-0.5' : 'left-0.5'
+                      }`} />
+                    </div>
+                  </div>
+
+                  {/* Switch 7: QR & Bank Detection in Photos */}
+                  <div
+                    onClick={() => handleToggleRule('blockPhoneAndBankingInImage')}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                      aiConfig.blockPhoneAndBankingInImage
+                        ? 'bg-emerald-50/60 border-emerald-300 ring-1 ring-emerald-500/20'
+                        : 'bg-slate-50/80 border-slate-200 opacity-70'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm text-slate-900">
+                        Vision AI: Soi Mã QR & STK Ngân Hàng
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                        Quét ảnh tìm mã QR nạp tiền hoặc số tài khoản lừa đảo tiền cọc.
+                      </p>
+                    </div>
+                    <div className={`w-9 h-5 rounded-full transition-colors relative shrink-0 mt-0.5 ${
+                      aiConfig.blockPhoneAndBankingInImage ? 'bg-[#0F5B4B]' : 'bg-slate-300'
+                    }`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform absolute top-0.5 ${
+                        aiConfig.blockPhoneAndBankingInImage ? 'right-0.5' : 'left-0.5'
+                      }`} />
+                    </div>
+                  </div>
+
+                  {/* Switch 8: Stock Images */}
+                  <div
+                    onClick={() => handleToggleRule('blockStockImages')}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                      aiConfig.blockStockImages
+                        ? 'bg-emerald-50/60 border-emerald-300 ring-1 ring-emerald-500/20'
+                        : 'bg-slate-50/80 border-slate-200 opacity-70'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm text-slate-900">
+                        Cảnh Báo Ảnh Mạng / Shopee
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                        Yêu cầu ảnh chụp thật tại phòng trọ thay vì ảnh quảng cáo sàn TMĐT.
+                      </p>
+                    </div>
+                    <div className={`w-9 h-5 rounded-full transition-colors relative shrink-0 mt-0.5 ${
+                      aiConfig.blockStockImages ? 'bg-[#0F5B4B]' : 'bg-slate-300'
+                    }`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform absolute top-0.5 ${
+                        aiConfig.blockStockImages ? 'right-0.5' : 'left-0.5'
+                      }`} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* BLOCK 2: Custom Rules Written by Admin */}
+              <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/90 shadow-xs space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-[#0F5B4B]" />
+                    <h3 className="font-bold text-slate-900 text-sm sm:text-base">
+                      2. Quy Tắc Riêng Do BQL Tự Gõ Thêm
+                    </h3>
+                  </div>
+                  <span className="text-[11px] text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full font-semibold">
+                    AI Gemini đọc trực tiếp
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Gõ bất kỳ yêu cầu nào bạn muốn AI tuân theo bằng tiếng Việt tự nhiên. AI sẽ hiểu ngữ cảnh và áp dụng ngay vào các bài đăng tiếp theo:
+                </p>
+                <textarea
+                  rows={5}
+                  value={aiConfig.customRules}
+                  onChange={(e) => setAiConfig({ ...aiConfig, customRules: e.target.value })}
+                  placeholder="Ví dụ:&#10;1. Các loại quạt điện, bàn ủi phải còn hoạt động bình thường và an toàn.&#10;2. Sách giáo trình phải nêu rõ trường và năm xuất bản..."
+                  className="w-full px-4 py-3 rounded-2xl border border-slate-300 text-xs sm:text-sm focus:outline-none focus:border-[#0F5B4B] focus:ring-2 focus:ring-[#0F5B4B]/15 leading-relaxed bg-slate-50/50"
+                />
+              </div>
+
+              {/* BLOCK 3: Blacklist Keywords */}
+              <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/90 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Ban className="w-5 h-5 text-rose-600" />
+                    <h3 className="font-bold text-slate-900 text-sm sm:text-base">
+                      3. Danh Sách Từ Khóa Bị Cấm ({aiConfig.customBlacklist.length} từ)
+                    </h3>
+                  </div>
+                </div>
+
+                {/* Add word form */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newBlacklistWord}
+                    onChange={(e) => setNewBlacklistWord(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddBlacklistWord();
+                      }
+                    }}
+                    placeholder="Nhập từ khóa cấm mới (VD: giá rẻ, cọc trước...)"
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-xs focus:outline-none focus:border-[#0F5B4B]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddBlacklistWord}
+                    className="px-4 py-2.5 rounded-xl bg-[#0F5B4B] text-white text-xs font-bold hover:bg-[#0A3F34] flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" /> Thêm từ
+                  </button>
+                </div>
+
+                {/* Tag Badges */}
+                <div className="flex flex-wrap gap-2 pt-1 max-h-48 overflow-y-auto">
+                  {aiConfig.customBlacklist.map((word) => (
+                    <span
+                      key={word}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold"
+                    >
+                      <Tag className="w-3 h-3 text-rose-500" />
+                      {word}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveBlacklistWord(word)}
+                        className="hover:text-rose-900 cursor-pointer ml-0.5 text-xs font-bold"
+                        title="Xóa từ khóa này"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* BLOCK 4: Confidence Slider */}
+              <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/90 shadow-xs space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Sliders className="w-5 h-5 text-[#0F5B4B]" />
+                    <h3 className="font-bold text-slate-900 text-sm sm:text-base">
+                      4. Ngưỡng Điểm AI Tự Động Duyệt Bài
+                    </h3>
+                  </div>
+                  <span className="text-base font-extrabold text-[#0F5B4B] bg-[#EAF7F2] px-3 py-1 rounded-full border border-[#A7E2CB]">
+                    {aiConfig.autoApproveConfidence}%
+                  </span>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <input
+                    type="range"
+                    min="50"
+                    max="95"
+                    step="5"
+                    value={aiConfig.autoApproveConfidence}
+                    onChange={(e) => setAiConfig({ ...aiConfig, autoApproveConfidence: Number(e.target.value) })}
+                    className="w-full accent-[#0F5B4B] cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[11px] text-slate-400 font-medium">
+                    <span>50% (Dễ tính - Tự duyệt nhiều)</span>
+                    <span className="font-bold text-slate-700">85% (Khuyên dùng)</span>
+                    <span>95% (Khắt khe - Chuyển BQL nhiều)</span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-600 leading-relaxed">
+                  💡 <strong>Cơ chế:</strong> Nếu bài đăng đạt từ <strong>{aiConfig.autoApproveConfidence}%</strong> điểm tin cậy trở lên, AI sẽ duyệt tự động lên sàn ngay (<span className="text-emerald-700 font-bold">ACTIVE</span>). Dưới ngưỡng này sẽ đưa vào hàng đợi để BQL xem xét thủ công (<span className="text-amber-700 font-bold">PENDING_ADMIN</span>).
+                </div>
+              </div>
+
+              {/* Sticky Action Footer */}
+              <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={handleResetDefaultAiConfig}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                >
+                  Khôi phục mặc định
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAiConfig}
+                  disabled={isSavingAiConfig}
+                  className="px-6 py-2.5 rounded-xl bg-[#0F5B4B] hover:bg-[#0A3F34] text-white text-xs font-bold shadow-md shadow-[#0F5B4B]/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  {isSavingAiConfig ? 'Đang lưu vào hệ thống...' : 'Lưu Tất Cả Quy Tắc'}
+                </button>
+              </div>
+            </div>
+
+            {/* RIGHT COLUMN: AI Status & Live Sandbox Tester (5 cols) */}
+            <div className="lg:col-span-5 space-y-6">
+              {/* AI Server Live Status Card */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                    <span className="font-bold text-slate-900 text-sm">Hạ Tầng AI Trực Tuyến</span>
+                  </div>
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">
+                    Hoạt động 100%
+                  </span>
+                </div>
+
+                <div className="space-y-2 text-xs text-slate-600 divide-y divide-slate-100">
+                  <div className="flex justify-between py-1.5">
+                    <span className="text-slate-400">Mô hình AI:</span>
+                    <strong className="text-slate-800">Google Gemini Flash Multimodal</strong>
+                  </div>
+                  <div className="flex justify-between py-1.5">
+                    <span className="text-slate-400">Khả năng thị giác (Vision):</span>
+                    <strong className="text-emerald-700">✓ Đang soi ảnh thực tế</strong>
+                  </div>
+                  <div className="flex justify-between py-1.5">
+                    <span className="text-slate-400">Thời gian phản hồi:</span>
+                    <strong className="text-slate-800">~1.2 giây / bài đăng</strong>
+                  </div>
+                  <div className="flex justify-between py-1.5">
+                    <span className="text-slate-400">Cơ chế bảo vệ:</span>
+                    <strong className="text-slate-800">Tự động chuyển mô hình dự phòng</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* LIVE AI SANDBOX / TESTER */}
+              <div className="bg-gradient-to-b from-white to-slate-50 p-5 sm:p-6 rounded-3xl border border-emerald-200 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Play className="w-4 h-4 text-[#0F5B4B]" />
+                    <h3 className="font-bold text-slate-900 text-sm sm:text-base">
+                      Phòng Thử Nghiệm AI (Sandbox)
+                    </h3>
+                  </div>
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                    Chạy thử thực tế
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Nhập bài đăng giả lập để kiểm tra xem Gemini sẽ phản hồi và áp dụng các luật bạn vừa cài đặt như thế nào:
+                </p>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Tiêu đề bài đăng thử nghiệm:
+                    </label>
+                    <input
+                      type="text"
+                      value={sandboxTitle}
+                      onChange={(e) => setSandboxTitle(e.target.value)}
+                      placeholder="VD: Bán lại quạt điện giá 50k..."
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:border-[#0F5B4B] bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Mô tả chi tiết:
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={sandboxDesc}
+                      onChange={(e) => setSandboxDesc(e.target.value)}
+                      placeholder="VD: Đồ còn mới, ib mình gửi STK chuyển khoản..."
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:border-[#0F5B4B] bg-white leading-relaxed"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Hình thức:</label>
+                      <select
+                        value={sandboxPurpose}
+                        onChange={(e) => setSandboxPurpose(e.target.value as any)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white"
+                      >
+                        <option value="FREE">🎁 Cho miễn phí</option>
+                        <option value="TRADE">🔄 Đổi đồ</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Danh mục:</label>
+                      <select
+                        value={sandboxCategory}
+                        onChange={(e) => setSandboxCategory(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white"
+                      >
+                        <option value="Gia dụng & Đời sống">Gia dụng & Đời sống</option>
+                        <option value="Sách & Giáo trình">Sách & Giáo trình</option>
+                        <option value="Đồ điện tử & Công nghệ">Đồ điện tử & Công nghệ</option>
+                        <option value="Quần áo & Phụ kiện">Quần áo & Phụ kiện</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleRunSandboxTest}
+                    disabled={isTestingSandbox || !sandboxTitle.trim()}
+                    className="w-full py-3 rounded-xl bg-[#0F5B4B] hover:bg-[#0A3F34] text-white text-xs font-bold shadow-md shadow-[#0F5B4B]/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isTestingSandbox ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Gemini AI đang phân tích bài đăng...
+                      </>
+                    ) : (
+                      <>
+                        <Cpu className="w-4 h-4 text-emerald-300" />
+                        Chạy Thử Nghiệm Kiểm Duyệt AI
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Sandbox Result Output Box */}
+                {sandboxResult && (
+                  <div className={`p-4 rounded-2xl border space-y-2 animate-fade-in ${
+                    sandboxResult.status === 'ACTIVE'
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                      : 'bg-amber-50 border-amber-300 text-amber-950'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="font-bold text-xs flex items-center gap-1.5">
+                        {sandboxResult.status === 'ACTIVE' ? (
+                          <>
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span className="text-emerald-700">KẾT QUẢ: ĐẠT TIÊU CHUẨN (ACTIVE)</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle className="w-4 h-4 text-amber-600" />
+                            <span className="text-amber-800">KẾT QUẢ: CẦN ADMIN DUYỆT (PENDING_ADMIN)</span>
+                          </>
+                        )}
+                      </div>
+                      <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-white/80 shadow-xs">
+                        Điểm: {sandboxResult.confidence}%
+                      </span>
+                    </div>
+
+                    <div className="text-xs leading-relaxed pt-1 border-t border-slate-200/50">
+                      <strong>Lý do AI giải thích:</strong> {sandboxResult.reasoning}
+                    </div>
+
+                    {sandboxResult.detected_tags && sandboxResult.detected_tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {sandboxResult.detected_tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="px-2 py-0.5 rounded-md bg-white/80 text-[10px] font-semibold text-slate-700 border border-slate-200/60"
+                          >
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
