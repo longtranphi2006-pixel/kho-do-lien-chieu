@@ -35,6 +35,9 @@ import {
   Info,
   Sliders,
   Check,
+  Trash2,
+  SlidersHorizontal,
+  AlertCircle,
 } from 'lucide-react';
 
 const PRESET_AVATARS = [
@@ -145,7 +148,7 @@ const processAvatarFile = (file: File): Promise<string> => {
 };
 
 export default function ProfilePage() {
-  const { currentUser, items, transactions, reviews, updateProfile } = useAppStore();
+  const { currentUser, items, transactions, reviews, updateProfile, updateItem, deleteItem } = useAppStore();
   const [activeTab, setActiveTab] = useState<'items' | 'trades' | 'reviews'>('items');
 
   // Edit Profile Modal State (10 User-Specified Fields)
@@ -269,6 +272,47 @@ export default function ProfilePage() {
 
   // Reviews for this user
   const userReviews = reviews.filter((r) => r.reviewee_id === currentUser.id);
+
+  const [profileActionMsg, setProfileActionMsg] = useState<string | null>(null);
+
+  const isItemTrading = (itemId: string) => {
+    return transactions.some(
+      (t) => t.item_id === itemId && (t.status === 'ACCEPTED' || t.status === 'HANDED_OVER')
+    );
+  };
+
+  const handleToggleHideItem = (itemId: string, currentStatus: string) => {
+    const isHidden = currentStatus === 'HIDDEN';
+    const nextStatus = isHidden ? 'ACTIVE' : 'HIDDEN';
+    updateItem(itemId, { status: nextStatus });
+    setProfileActionMsg(
+      isHidden
+        ? 'Đã mở lại hiển thị món đồ lên Kho Đồ công khai.'
+        : 'Đã tạm thời ẩn món đồ khỏi danh sách công khai.'
+    );
+    setTimeout(() => setProfileActionMsg(null), 3500);
+  };
+
+  const handleDeleteItem = (itemId: string, itemTitle: string) => {
+    if (isItemTrading(itemId)) {
+      alert(
+        'Món đồ đang trong tiến trình giao dịch hẹn gặp với bạn sinh viên. Không thể sửa hoặc xóa khi đang giao dịch để đảm bảo uy tín và tránh tranh chấp!'
+      );
+      return;
+    }
+    const confirmed = confirm(
+      `Bạn có chắc chắn muốn xóa món đồ "${itemTitle}" khỏi danh sách Kho Đồ?\n\n(Lưu ý: Món đồ sẽ bị gỡ bỏ hoàn toàn khỏi kho đồ)`
+    );
+    if (!confirmed) return;
+
+    try {
+      deleteItem(itemId);
+      setProfileActionMsg('Đã xóa món đồ khỏi kho đồ thành công.');
+      setTimeout(() => setProfileActionMsg(null), 3500);
+    } catch (e: any) {
+      alert(e?.message || 'Có lỗi khi xóa món đồ');
+    }
+  };
 
   const contactPrefLabel =
     currentUser.preferred_contact === 'PHONE'
@@ -597,11 +641,178 @@ export default function ProfilePage() {
       {/* Tab: Items */}
       {activeTab === 'items' && (
         <div className="space-y-4">
+          {profileActionMsg && (
+            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-fade-in shadow-xs">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              {profileActionMsg}
+            </div>
+          )}
+
+          {userItems.length > 0 && (
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-slate-700">
+                <SlidersHorizontal className="w-4 h-4 text-[#0F5B4B] shrink-0" />
+                <span>
+                  <strong>Quản lý kho đồ cá nhân:</strong> Chỉ bạn mới có quyền Sửa, Ẩn hoặc Xóa món đồ của mình. Khi đang có phiên giao dịch hẹn gặp, hệ thống sẽ khóa tính năng Sửa/Xóa để bảo vệ quyền lợi hai bên.
+                </span>
+              </div>
+              <Link
+                href="/items/new"
+                className="shrink-0 px-3.5 py-1.5 rounded-xl bg-[#0F5B4B] hover:bg-[#0A3F34] text-white font-bold text-xs transition-colors text-center"
+              >
+                + Đăng món mới
+              </Link>
+            </div>
+          )}
+
           {userItems.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {userItems.map((item) => (
-                <ItemCard key={item.id} item={item} />
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {userItems.map((item) => {
+                const tradingNow = isItemTrading(item.id);
+                const isHidden = item.status === 'HIDDEN';
+                const isCompleted = item.status === 'COMPLETED';
+
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col"
+                  >
+                    {/* Item Image & Badges */}
+                    <div className="relative aspect-16/10 w-full bg-slate-100 overflow-hidden">
+                      <img
+                        src={item.images?.[0] || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=80'}
+                        alt={item.title}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-md shadow-xs ${
+                            item.purpose === 'FREE'
+                              ? 'bg-emerald-600/90 text-white'
+                              : 'bg-indigo-600/90 text-white'
+                          }`}
+                        >
+                          {item.purpose === 'FREE' ? '🎁 Tặng 0đ' : '🔄 Đổi đồ'}
+                        </span>
+                      </div>
+
+                      <div className="absolute top-2.5 right-2.5">
+                        {isHidden ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/95 text-white shadow-xs backdrop-blur-md">
+                            <EyeOff className="w-3 h-3" /> Đã ẩn
+                          </span>
+                        ) : tradingNow ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-600/95 text-white shadow-xs backdrop-blur-md">
+                            <Clock className="w-3 h-3 animate-spin" /> Đang giao dịch
+                          </span>
+                        ) : isCompleted ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-700/90 text-white shadow-xs backdrop-blur-md">
+                            <Check className="w-3 h-3" /> Đã trao xong
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/95 text-white shadow-xs backdrop-blur-md">
+                            <Sparkles className="w-3 h-3" /> Mở nhận
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Content */}
+                    <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                      <div>
+                        <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
+                          {item.category}
+                        </div>
+                        <h4 className="font-bold text-slate-900 text-sm line-clamp-1 mt-0.5" title={item.title}>
+                          {item.title}
+                        </h4>
+                        <div className="flex items-center gap-1 text-slate-500 text-xs mt-1">
+                          <MapPin className="w-3.5 h-3.5 text-[#0F5B4B] shrink-0" />
+                          <span className="truncate">{item.location}</span>
+                        </div>
+                      </div>
+
+                      {/* Trade Lock Notice */}
+                      {tradingNow && (
+                        <div className="p-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-1.5 font-medium">
+                          <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>Đang trong phiên giao dịch hẹn gặp (Khóa Sửa/Xóa)</span>
+                        </div>
+                      )}
+
+                      {/* Management Action Buttons */}
+                      <div className="pt-2 border-t border-slate-100 space-y-2">
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {/* Sửa */}
+                          {tradingNow ? (
+                            <button
+                              type="button"
+                              disabled
+                              title="Không thể sửa khi đang có giao dịch hẹn gặp"
+                              className="py-1.5 px-2 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold flex items-center justify-center gap-1 cursor-not-allowed border border-slate-200"
+                            >
+                              <Lock className="w-3 h-3" /> Sửa
+                            </button>
+                          ) : (
+                            <Link
+                              href={`/items/${item.id}?edit=true`}
+                              className="py-1.5 px-2 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold flex items-center justify-center gap-1 transition-colors border border-slate-200"
+                            >
+                              <Edit3 className="w-3 h-3 text-[#0F5B4B]" /> Sửa
+                            </Link>
+                          )}
+
+                          {/* Ẩn / Hiện */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleHideItem(item.id, item.status)}
+                            title={isHidden ? 'Mở lại trên kho đồ' : 'Tạm ẩn khỏi kho'}
+                            className={`py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors border cursor-pointer ${
+                              isHidden
+                                ? 'bg-emerald-50 text-[#0F5B4B] border-emerald-200 hover:bg-emerald-100'
+                                : 'bg-slate-50 text-amber-800 border-amber-200 hover:bg-amber-50'
+                            }`}
+                          >
+                            {isHidden ? (
+                              <>
+                                <Eye className="w-3 h-3 text-[#0F5B4B]" /> Hiện
+                              </>
+                            ) : (
+                              <>
+                                <EyeOff className="w-3 h-3 text-amber-700" /> Ẩn
+                              </>
+                            )}
+                          </button>
+
+                          {/* Xóa */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteItem(item.id, item.title)}
+                            disabled={tradingNow}
+                            title={tradingNow ? 'Không thể xóa khi đang có giao dịch' : 'Xóa món đồ khỏi kho'}
+                            className={`py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors border ${
+                              tradingNow
+                                ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 cursor-pointer'
+                            }`}
+                          >
+                            {tradingNow ? <Lock className="w-3 h-3" /> : <Trash2 className="w-3 h-3 text-rose-600" />} Xóa
+                          </button>
+                        </div>
+
+                        {/* Chi tiết */}
+                        <Link
+                          href={`/items/${item.id}`}
+                          className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-[#EAF7F2] text-[#0F5B4B] hover:text-[#0F5B4B] text-xs font-bold flex items-center justify-center gap-1.5 transition-colors text-center"
+                        >
+                          Xem chi tiết & Quản lý giao dịch
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="bg-white rounded-3xl border border-slate-200 p-8 text-center space-y-3">

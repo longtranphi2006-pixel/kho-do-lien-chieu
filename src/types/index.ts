@@ -2,7 +2,7 @@ export type ItemPurpose = 'FREE' | 'EXCHANGE';
 
 export type ItemCondition = 'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR';
 
-export type ItemStatus = 'ACTIVE' | 'PENDING_ADMIN' | 'IN_PROGRESS' | 'COMPLETED' | 'REJECTED';
+export type ItemStatus = 'ACTIVE' | 'PENDING_ADMIN' | 'IN_PROGRESS' | 'COMPLETED' | 'REJECTED' | 'HIDDEN';
 
 export type TradeStatus = 'REQUESTED' | 'ACCEPTED' | 'HANDED_OVER' | 'COMPLETED' | 'CANCELLED';
 

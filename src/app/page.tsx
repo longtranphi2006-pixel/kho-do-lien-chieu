@@ -30,8 +30,8 @@ export default function HomePage() {
   // Filter items
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
-      // Hide rejected, pending admin, and completed items from homepage main feed
-      if (item.status === 'REJECTED' || item.status === 'PENDING_ADMIN' || item.status === 'COMPLETED') return false;
+      // Hide rejected, pending admin, completed, and hidden items from homepage main feed
+      if (item.status === 'REJECTED' || item.status === 'PENDING_ADMIN' || item.status === 'COMPLETED' || item.status === 'HIDDEN') return false;
 
       // Category filter
       if (selectedCategory !== 'Tất cả' && item.category !== selectedCategory) {

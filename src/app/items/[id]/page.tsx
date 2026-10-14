@@ -25,7 +25,23 @@ import {
   AlertCircle,
   Trash2,
   HeartHandshake,
+  Edit3,
+  Eye,
+  EyeOff,
+  Lock,
+  SlidersHorizontal,
+  Save,
 } from 'lucide-react';
+import { ItemCondition, ItemPurpose } from '@/types';
+
+const ITEM_CATEGORIES = [
+  'Đồ dùng học tập',
+  'Thiết bị điện tử',
+  'Đồ gia dụng phòng trọ',
+  'Thời trang & Phụ kiện',
+  'Sách & Giáo trình',
+  'Khác',
+];
 
 function ItemDetailContent() {
   const params = useParams();
@@ -41,6 +57,8 @@ function ItemDetailContent() {
     confirmTradeHandover,
     cancelTrade,
     createTradeRequest,
+    updateItem,
+    deleteItem,
     favorites,
     toggleFavorite,
   } = useAppStore();
@@ -60,6 +78,17 @@ function ItemDetailContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
   const [isProcessingAction, setIsProcessingAction] = useState<boolean>(false);
+
+  // Owner Edit Item Modal State
+  const [showEditItemModal, setShowEditItemModal] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editCategory, setEditCategory] = useState('Đồ dùng học tập');
+  const [editCondition, setEditCondition] = useState<ItemCondition>('GOOD');
+  const [editPurpose, setEditPurpose] = useState<ItemPurpose>('FREE');
+  const [editLocation, setEditLocation] = useState('');
+  const [editImageUrl, setEditImageUrl] = useState('');
+  const [isUpdatingItem, setIsUpdatingItem] = useState(false);
 
   if (!item) {
     return (
@@ -138,6 +167,119 @@ function ItemDetailContent() {
   const activeReceiverProfile = activeTrade
     ? getRequesterProfile(activeTrade.receiver_id, activeTrade.note)
     : null;
+
+  // Check if item is actively in trade (ACCEPTED or HANDED_OVER)
+  const isTradingNow = Boolean(
+    activeTrade && (activeTrade.status === 'ACCEPTED' || activeTrade.status === 'HANDED_OVER')
+  );
+
+  // Owner edit item handlers
+  const handleOpenEditItem = () => {
+    if (isTradingNow) {
+      alert('Không thể chỉnh sửa thông tin món đồ khi đang trong tiến trình giao dịch với bạn sinh viên để đảm bảo minh bạch.');
+      return;
+    }
+    setEditTitle(item.title);
+    setEditDescription(item.description);
+    setEditCategory(item.category);
+    setEditCondition(item.condition);
+    setEditPurpose(item.purpose);
+    setEditLocation(item.location);
+    setEditImageUrl(item.images?.[0] || '');
+    setShowEditItemModal(true);
+  };
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.search.includes('edit=true') && isDonorCurrent) {
+      handleOpenEditItem();
+    }
+  }, [isDonorCurrent]);
+
+  const handleSaveEditItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTitle.trim()) {
+      alert('Vui lòng nhập tiêu đề món đồ.');
+      return;
+    }
+    setIsUpdatingItem(true);
+    try {
+      const nextImages = editImageUrl.trim()
+        ? [editImageUrl.trim(), ...(item.images.slice(1))]
+        : item.images;
+
+      updateItem(item.id, {
+        title: editTitle.trim(),
+        description: editDescription.trim(),
+        category: editCategory,
+        condition: editCondition,
+        purpose: editPurpose,
+        location: editLocation.trim() || item.location,
+        images: nextImages,
+      });
+
+      setShowEditItemModal(false);
+      setActionSuccessMsg('Đã cập nhật thông tin món đồ thành công!');
+      setTimeout(() => setActionSuccessMsg(null), 4000);
+    } catch (err: any) {
+      console.error(err);
+      alert('Lỗi cập nhật món đồ: ' + (err?.message || 'Có lỗi xảy ra'));
+    } finally {
+      setIsUpdatingItem(false);
+    }
+  };
+
+  const handleToggleHideItem = () => {
+    const isCurrentlyHidden = item.status === 'HIDDEN';
+    const nextStatus = isCurrentlyHidden ? 'ACTIVE' : 'HIDDEN';
+    const msg = isCurrentlyHidden
+      ? 'Đã hiện lại món đồ lên Kho Đồ công cộng!'
+      : 'Đã ẩn món đồ thành công! Món đồ sẽ không xuất hiện trên trang chủ hay danh sách công khai nữa.';
+
+    updateItem(item.id, { status: nextStatus });
+    setActionSuccessMsg(msg);
+    setTimeout(() => setActionSuccessMsg(null), 4000);
+  };
+
+  const handleDeleteItem = () => {
+    if (isTradingNow) {
+      alert('Món đồ đang trong tiến trình giao dịch hẹn gặp với bạn sinh viên. Bạn không thể xóa món đồ khi đang giao dịch!');
+      return;
+    }
+    const confirmed = confirm(
+      `Bạn có chắc chắn muốn xóa vĩnh viễn món đồ "${item.title}" khỏi Kho Đồ không?\n\n(Lưu ý: Món đồ sẽ bị gỡ bỏ hoàn toàn khỏi danh sách trên hệ thống)`
+    );
+    if (!confirmed) return;
+
+    try {
+      deleteItem(item.id);
+      alert('Đã xóa món đồ khỏi kho đồ thành công.');
+      router.push('/profile');
+    } catch (err: any) {
+      console.error(err);
+      alert('Không thể xóa món đồ: ' + (err?.message || 'Có lỗi xảy ra'));
+    }
+  };
+
+  // If item is hidden and current user is NOT the owner or admin
+  if (item.status === 'HIDDEN' && !isDonorCurrent && currentUser?.role !== 'admin') {
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center space-y-4">
+        <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
+          <EyeOff className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-800">Món đồ tạm thời bị ẩn</h2>
+        <p className="text-slate-500 text-sm">
+          Chủ món đồ đã tạm thời ẩn mục này khỏi danh sách công khai. Vui lòng quay lại sau!
+        </p>
+        <Link
+          href="/items"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white font-bold text-sm"
+        >
+          <ArrowLeft className="w-4 h-4" /> Quay lại Kho đồ
+        </Link>
+      </div>
+    );
+  }
 
   // Owner action: Choose specific person from queue to trade with
   const handleOwnerAccept = (tradeId: string) => {
@@ -469,6 +611,125 @@ function ItemDetailContent() {
                     {actionSuccessMsg}
                   </div>
                 )}
+
+                {/* THANH QUẢN LÝ MÓN HÀNG (DÀNH RIÊNG CHO CHỦ MÓN) */}
+                <div className="p-3.5 rounded-2xl bg-white/95 border border-slate-200 shadow-xs space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <SlidersHorizontal className="w-4 h-4 text-[#0F5B4B]" />
+                      <span className="text-xs font-bold text-slate-800">Trạng thái món đồ:</span>
+                    </div>
+
+                    {/* Badge Trạng Thái */}
+                    {item.status === 'HIDDEN' ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                        <EyeOff className="w-3 h-3 text-amber-700" />
+                        Đã ẩn tạm thời khỏi kho
+                      </span>
+                    ) : isTradingNow ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 border border-blue-300">
+                        <Clock className="w-3 h-3 text-blue-700 animate-spin" />
+                        Đang giao dịch hẹn gặp
+                      </span>
+                    ) : activeTrade && activeTrade.status === 'COMPLETED' ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-700" />
+                        Đã trao tặng thành công
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-[#0F5B4B] border border-emerald-200">
+                        <Sparkles className="w-3 h-3 text-[#0F5B4B]" />
+                        Đang mở nhận công khai
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Nút Thao Tác: Sửa, Ẩn/Hiện, Xóa */}
+                  <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-100">
+                    {/* Nút Sửa */}
+                    <button
+                      type="button"
+                      onClick={handleOpenEditItem}
+                      disabled={isTradingNow}
+                      title={
+                        isTradingNow
+                          ? 'Đang có giao dịch: Không thể sửa thông tin món đồ khi đang hẹn gặp để tránh tranh chấp'
+                          : 'Chỉnh sửa thông tin món đồ'
+                      }
+                      className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                        isTradingNow
+                          ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-75'
+                          : 'bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 hover:border-[#0F5B4B] shadow-2xs active:scale-98 cursor-pointer'
+                      }`}
+                    >
+                      {isTradingNow ? <Lock className="w-3.5 h-3.5 text-slate-400" /> : <Edit3 className="w-3.5 h-3.5 text-[#0F5B4B]" />}
+                      Sửa đồ
+                    </button>
+
+                    {/* Nút Ẩn / Hiện */}
+                    <button
+                      type="button"
+                      onClick={handleToggleHideItem}
+                      title={item.status === 'HIDDEN' ? 'Mở lại công khai trên kho đồ' : 'Tạm ẩn để người khác không tìm thấy'}
+                      className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border shadow-2xs active:scale-98 ${
+                        item.status === 'HIDDEN'
+                          ? 'bg-emerald-50 text-[#0F5B4B] border-emerald-300 hover:bg-emerald-100'
+                          : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50'
+                      }`}
+                    >
+                      {item.status === 'HIDDEN' ? (
+                        <>
+                          <Eye className="w-3.5 h-3.5 text-[#0F5B4B]" />
+                          Hiện lại
+                        </>
+                      ) : (
+                        <>
+                          <EyeOff className="w-3.5 h-3.5 text-amber-700" />
+                          Ẩn món
+                        </>
+                      )}
+                    </button>
+
+                    {/* Nút Xóa Khỏi Kho */}
+                    <button
+                      type="button"
+                      onClick={handleDeleteItem}
+                      disabled={isTradingNow}
+                      title={
+                        isTradingNow
+                          ? 'Đang có giao dịch: Không thể xóa món đồ khi đang hẹn gặp để tránh gian lận'
+                          : 'Xóa vĩnh viễn món đồ khỏi danh sách kho'
+                      }
+                      className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                        isTradingNow
+                          ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-75'
+                          : 'bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 hover:border-rose-400 shadow-2xs active:scale-98 cursor-pointer'
+                      }`}
+                    >
+                      {isTradingNow ? <Lock className="w-3.5 h-3.5 text-slate-400" /> : <Trash2 className="w-3.5 h-3.5 text-rose-600" />}
+                      Xóa kho
+                    </button>
+                  </div>
+
+                  {/* Thông báo quy định an toàn khi đang có phiên giao dịch */}
+                  {isTradingNow && (
+                    <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-[11px] leading-relaxed flex items-start gap-2">
+                      <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>Khóa bảo vệ giao dịch:</strong> Món đồ đang trong tiến trình hẹn gặp trao nhận với bạn sinh viên. Nút <strong>Sửa</strong> và <strong>Xóa khỏi kho</strong> tạm thời bị khóa nhằm đảm bảo tính minh bạch, uy tín và quyền lợi giữa hai bên.
+                      </div>
+                    </div>
+                  )}
+
+                  {item.status === 'HIDDEN' && !isTradingNow && (
+                    <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-[11px] leading-relaxed flex items-start gap-2">
+                      <EyeOff className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>Món đồ đang ở chế độ Ẩn:</strong> Các bạn sinh viên khác sẽ không thấy món đồ này trên trang chủ hay trang tìm kiếm đồ. Chỉ có bạn mới xem được. Bấm <strong>"Hiện lại"</strong> bất cứ khi nào bạn muốn mở lại công khai.
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* CASE 1: THERE IS AN ONGOING ACTIVE TRADE (ACCEPTED OR HANDED OVER) */}
                 {activeTrade && (activeTrade.status === 'ACCEPTED' || activeTrade.status === 'HANDED_OVER') ? (
@@ -1014,6 +1275,169 @@ function ItemDetailContent() {
                   className="flex-1 py-3 rounded-xl bg-[#0F5B4B] text-white font-bold hover:bg-[#0A3F34] shadow-md shadow-[#0F5B4B]/20 cursor-pointer disabled:opacity-50"
                 >
                   {isSubmitting ? 'Đang gửi...' : 'Gửi yêu cầu ngay'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* EDIT ITEM MODAL */}
+      {showEditItemModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-5 sm:p-7 shadow-2xl animate-scale-up space-y-4 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
+                  <Edit3 className="w-5 h-5 text-[#0F5B4B]" />
+                  Chỉnh sửa thông tin món đồ
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Cập nhật tiêu đề, mô tả, tình trạng hoặc điểm hẹn của món đồ
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEditItemModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditItem} className="space-y-4 text-xs sm:text-sm">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Tiêu đề món đồ <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="Ví dụ: Balo laptop, Nồi cơm điện..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-hidden focus:border-[#0F5B4B] focus:ring-2 focus:ring-[#0F5B4B]/20"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Danh mục
+                  </label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:outline-hidden focus:border-[#0F5B4B]"
+                  >
+                    {ITEM_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Tình trạng món đồ
+                  </label>
+                  <select
+                    value={editCondition}
+                    onChange={(e) => setEditCondition(e.target.value as ItemCondition)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:outline-hidden focus:border-[#0F5B4B]"
+                  >
+                    <option value="NEW">Mới 100% (Chưa dùng)</option>
+                    <option value="LIKE_NEW">Còn rất tốt (90-95%)</option>
+                    <option value="GOOD">Dùng tốt (70-85%)</option>
+                    <option value="FAIR">Cũ nhưng vẫn dùng tốt</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Mục đích đăng
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditPurpose('FREE')}
+                    className={`py-2 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      editPurpose === 'FREE'
+                        ? 'border-[#0F5B4B] bg-[#EAF7F2] text-[#0F5B4B] ring-2 ring-[#0F5B4B]/20'
+                        : 'border-slate-200 bg-white text-slate-600'
+                    }`}
+                  >
+                    <Gift className="w-4 h-4" /> Cho miễn phí (0đ)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditPurpose('EXCHANGE')}
+                    className={`py-2 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      editPurpose === 'EXCHANGE'
+                        ? 'border-[#0F5B4B] bg-emerald-50 text-[#0F5B4B] ring-2 ring-[#0F5B4B]/20'
+                        : 'border-slate-200 bg-white text-slate-600'
+                    }`}
+                  >
+                    <ArrowLeftRight className="w-4 h-4" /> Đổi đồ dùng
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Mô tả chi tiết món đồ
+                </label>
+                <textarea
+                  rows={3}
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Mô tả công năng, lý do cho/đổi, độ mới..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-hidden focus:border-[#0F5B4B] focus:ring-2 focus:ring-[#0F5B4B]/20 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Địa điểm hẹn nhận đồ dự kiến
+                </label>
+                <input
+                  type="text"
+                  value={editLocation}
+                  onChange={(e) => setEditLocation(e.target.value)}
+                  placeholder="Ví dụ: Cổng ĐH Bách Khoa, KTX DMC 579..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-hidden focus:border-[#0F5B4B] focus:ring-2 focus:ring-[#0F5B4B]/20"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Hình ảnh món đồ (Link ảnh)
+                </label>
+                <input
+                  type="text"
+                  value={editImageUrl}
+                  onChange={(e) => setEditImageUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-hidden focus:border-[#0F5B4B] focus:ring-2 focus:ring-[#0F5B4B]/20"
+                />
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowEditItemModal(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingItem}
+                  className="px-6 py-2.5 rounded-xl bg-[#0F5B4B] hover:bg-[#0A3F34] text-white font-bold shadow-md shadow-[#0F5B4B]/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{isUpdatingItem ? 'Đang lưu...' : 'Lưu thay đổi'}</span>
                 </button>
               </div>
             </form>

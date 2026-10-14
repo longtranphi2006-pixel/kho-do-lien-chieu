@@ -23,7 +23,7 @@ function CatalogContent() {
   const filteredItems = useMemo(() => {
     return items
       .filter((item) => {
-        if (item.status === 'REJECTED' || item.status === 'PENDING_ADMIN' || item.status === 'COMPLETED') return false;
+        if (item.status === 'REJECTED' || item.status === 'PENDING_ADMIN' || item.status === 'COMPLETED' || item.status === 'HIDDEN') return false;
         if (category !== 'Tất cả' && item.category !== category) return false;
         if (purpose !== 'ALL' && item.purpose !== purpose) return false;
         if (condition !== 'ALL' && item.condition !== condition) return false;
