@@ -44,6 +44,8 @@ function TradeStepperContent() {
 
   const {
     getTransactionById,
+    getItemById,
+    deletedItemIds,
     advanceTradeStatus,
     confirmTradeHandover,
     cancelTrade,
@@ -56,6 +58,24 @@ function TradeStepperContent() {
   const storeTransaction = getTransactionById(tradeId);
   const [directTransaction, setDirectTransaction] = useState<Transaction | null>(null);
   const [isLoadingDirect, setIsLoadingDirect] = useState(!storeTransaction);
+  const [syncTrigger, setSyncTrigger] = useState(0);
+
+  // Cross-tab and realtime synchronization
+  useEffect(() => {
+    const handleSync = () => {
+      setSyncTrigger((k) => k + 1);
+    };
+    window.addEventListener('kdlc-trades-updated', handleSync);
+    window.addEventListener('kdlc-items-updated', handleSync);
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('focus', handleSync);
+    return () => {
+      window.removeEventListener('kdlc-trades-updated', handleSync);
+      window.removeEventListener('kdlc-items-updated', handleSync);
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('focus', handleSync);
+    };
+  }, []);
 
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -96,13 +116,8 @@ function TradeStepperContent() {
     setReportModalOpen(true);
   };
 
-  // Direct Supabase fallback fetch if transaction not found in in-memory store
+  // Direct Supabase fallback fetch if transaction not found in in-memory store, or when sync triggered
   useEffect(() => {
-    if (storeTransaction) {
-      setIsLoadingDirect(false);
-      return;
-    }
-
     let isMounted = true;
     const fetchDirect = async () => {
       if (!isSupabaseConfigured() || !supabase) {
@@ -151,7 +166,7 @@ function TradeStepperContent() {
     return () => {
       isMounted = false;
     };
-  }, [tradeId, storeTransaction, currentUser]);
+  }, [tradeId, syncTrigger, currentUser]);
 
   const transaction = storeTransaction || directTransaction;
 
@@ -169,7 +184,14 @@ function TradeStepperContent() {
     return ids;
   }, [currentUser, allUsers]);
 
-  const item = transaction?.item;
+  const rawItem = (transaction?.item_id ? getItemById(transaction.item_id) : undefined) || transaction?.item;
+  const isItemDeleted = Boolean(
+    !rawItem ||
+    (transaction && deletedItemIds.has(transaction.item_id)) ||
+    (rawItem && deletedItemIds.has(rawItem.id))
+  );
+  const item = rawItem;
+  const isFrozen = Boolean(item && item.status === 'HIDDEN');
   const giver = transaction?.giver;
   const receiver = transaction?.receiver;
   const status = transaction?.status || 'REQUESTED';
@@ -263,6 +285,14 @@ function TradeStepperContent() {
 
   const handleAdvance = (nextStatus: TradeStatus) => {
     if (!transaction) return;
+    if (isItemDeleted) {
+      alert('Món đồ này đã bị xóa hoàn toàn khỏi kho đồ bởi Ban Quản Trị.');
+      return;
+    }
+    if (isFrozen) {
+      alert('Món đồ và phiên trao đổi này đang bị Ban Quản Trị tạm khóa / đóng băng để xác minh.');
+      return;
+    }
     if (currentUser && isUserLocked(currentUser)) {
       alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
       return;
@@ -279,6 +309,14 @@ function TradeStepperContent() {
 
   const handleConfirmRole = (role: 'giver' | 'receiver') => {
     if (!transaction) return;
+    if (isItemDeleted) {
+      alert('Món đồ này đã bị xóa hoàn toàn khỏi kho đồ bởi Ban Quản Trị.');
+      return;
+    }
+    if (isFrozen) {
+      alert('Món đồ và phiên trao đổi này đang bị Ban Quản Trị tạm khóa / đóng băng để xác minh.');
+      return;
+    }
     if (currentUser && isUserLocked(currentUser)) {
       alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
       return;
@@ -313,6 +351,14 @@ function TradeStepperContent() {
   const handleSendChatMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!transaction || !chatInput.trim() || isSendingMsg) return;
+    if (isItemDeleted) {
+      alert('Món đồ này đã bị xóa khỏi kho đồ, không thể gửi tin nhắn.');
+      return;
+    }
+    if (isFrozen) {
+      alert('Phiên trao đổi đang bị đóng băng bởi Ban Quản Trị, tạm khóa chức năng gửi tin nhắn.');
+      return;
+    }
     if (currentUser && isUserLocked(currentUser)) {
       alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai. Không thể gửi tin nhắn.');
       return;
@@ -411,6 +457,47 @@ function TradeStepperContent() {
           Theo dõi tiến độ trao đổi món đồ
         </h1>
       </div>
+
+      {/* Deleted Item Warning Banner */}
+      {isItemDeleted && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-950 flex items-start gap-3 shadow-xs">
+          <AlertTriangle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <h3 className="font-extrabold text-sm sm:text-base text-rose-900">
+                Món đồ đã bị xóa hoàn toàn khỏi kho đồ
+              </h3>
+              <span className="px-2 py-0.5 rounded-full bg-rose-200 text-rose-800 text-[10px] font-extrabold uppercase">
+                BQL can thiệp
+              </span>
+            </div>
+            <p className="text-xs text-rose-700 leading-relaxed">
+              Ban Quản Trị đã xóa hoàn toàn món đồ này khỏi hệ thống do vi phạm quy chế cộng đồng. Phiên trao đổi này đã chấm dứt và không còn hiệu lực.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Frozen Alert Banner */}
+      {!isItemDeleted && isFrozen && !isCancelled && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-amber-50 border-2 border-amber-300 text-amber-950 flex items-start gap-3 shadow-xs">
+          <Lock className="w-6 h-6 text-amber-700 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <h3 className="font-extrabold text-sm sm:text-base text-amber-900">
+                Món đồ & Phiên trao đổi đang bị TẠM KHÓA / ĐÓNG BĂNG
+              </h3>
+              <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-800 text-[10px] font-extrabold uppercase">
+                Tạm khóa bởi BQL
+              </span>
+            </div>
+            <p className="text-xs text-amber-800 leading-relaxed">
+              Món đồ và phiên trao đổi này đang bị Ban Quản Trị tạm khóa/đóng băng để kiểm tra báo cáo vi phạm. 
+              <strong> Tất cả thao tác xác nhận bàn giao và trao đổi đều tạm dừng </strong> cho đến khi Ban Quản Trị mở lại.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Visual 4-Step Stepper Bar */}
       <div className="bg-white p-5 sm:p-7 rounded-3xl border border-slate-200/90 shadow-xs">
@@ -657,8 +744,68 @@ function TradeStepperContent() {
           </span>
         </div>
 
+        {/* CASE 1: ITEM DELETED BY ADMIN */}
+        {isItemDeleted && (
+          <div className="p-6 rounded-2xl bg-rose-50 border-2 border-rose-300 text-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <XCircle className="w-6 h-6 stroke-[2.5]" />
+            </div>
+            <div className="font-extrabold text-rose-950 text-base sm:text-lg">
+              Món đồ đã bị xóa hoàn toàn khỏi kho đồ
+            </div>
+            <p className="text-xs text-rose-700 max-w-md mx-auto leading-relaxed">
+              Món đồ này đã bị Ban Quản Trị xóa vĩnh viễn khỏi toàn bộ hệ thống do vi phạm quy chế cộng đồng. Phiên trao đổi này đã chấm dứt và không thể tiếp tục thực hiện.
+            </p>
+            <div className="pt-2 flex flex-wrap justify-center gap-2.5">
+              <Link
+                href="/items"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white text-xs sm:text-sm font-bold hover:bg-[#0A3F34]"
+              >
+                Khám phá món đồ khác
+              </Link>
+              <Link
+                href="/trades"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-slate-100 text-slate-700 text-xs sm:text-sm font-bold hover:bg-slate-200"
+              >
+                Danh sách trao đổi của tôi
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* CASE 2: ITEM & TRADE FROZEN BY ADMIN */}
+        {!isItemDeleted && isFrozen && !isCancelled && (
+          <div className="p-6 rounded-2xl bg-amber-50 border-2 border-amber-300 text-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center mx-auto">
+              <Lock className="w-6 h-6 stroke-[2.5]" />
+            </div>
+            <div className="font-extrabold text-amber-950 text-base sm:text-lg">
+              🔒 Phiên trao đổi đang bị TẠM KHÓA / ĐÓNG BĂNG
+            </div>
+            <p className="text-xs text-amber-800 max-w-lg mx-auto leading-relaxed">
+              Món đồ này đang trong diện kiểm tra và xử lý vi phạm của Ban Quản Trị. 
+              <strong> Mọi thao tác xác nhận bàn giao giữa Bên Cho và Bên Nhận tạm thời bị khóa.</strong>
+              Vui lòng chờ Ban Quản Trị mở lại đóng băng hoặc kiểm tra thông báo tài khoản.
+            </p>
+            <div className="pt-2 flex flex-wrap justify-center gap-2.5">
+              <Link
+                href="/items"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-white border border-slate-300 text-slate-700 text-xs sm:text-sm font-semibold hover:bg-slate-50"
+              >
+                Khám phá Kho đồ
+              </Link>
+              <Link
+                href="/trades"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white text-xs sm:text-sm font-bold hover:bg-[#0A3F34]"
+              >
+                Danh sách trao đổi của tôi
+              </Link>
+            </div>
+          </div>
+        )}
+
         {/* STEP 1: REQUESTED */}
-        {status === 'REQUESTED' && (
+        {!isItemDeleted && !isFrozen && !isCancelled && status === 'REQUESTED' && (
           <div className="space-y-4">
             {effectiveRole === 'giver' ? (
               // Giver has authority to ACCEPT
@@ -730,7 +877,7 @@ function TradeStepperContent() {
         )}
 
         {/* STEP 2: ACCEPTED */}
-        {status === 'ACCEPTED' && (
+        {!isItemDeleted && !isFrozen && !isCancelled && status === 'ACCEPTED' && (
           <div className="space-y-4">
             <div className="p-4 rounded-2xl bg-[#EAF7F2] border border-[#A7E2CB] text-slate-800 space-y-2">
               <div className="font-bold text-sm text-[#0F5B4B]">
@@ -772,7 +919,7 @@ function TradeStepperContent() {
         )}
 
         {/* STEP 3: HANDED_OVER (Two-Way Confirmation per user request) */}
-        {status === 'HANDED_OVER' && !isCompleted && (
+        {!isItemDeleted && !isFrozen && !isCancelled && status === 'HANDED_OVER' && !isCompleted && (
           <div className="space-y-5">
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-700 flex items-start gap-2.5">
               <HelpCircle className="w-4 h-4 text-[#0F5B4B] shrink-0 mt-0.5" />
@@ -930,10 +1077,10 @@ function TradeStepperContent() {
               <XCircle className="w-6 h-6 stroke-[2.5]" />
             </div>
             <div className="font-extrabold text-rose-950 text-base sm:text-lg">
-              Phiên trao đổi này đã được hủy
+              Phiên trao đổi đã được khóa / hủy bỏ
             </div>
-            <p className="text-xs text-rose-700 max-w-md mx-auto">
-              Một trong hai bên đã hủy giao dịch. Món đồ đã được tự động mở lại trên Kho đồ Liên Chiểu để sinh viên khác tiếp tục nhận.
+            <p className="text-xs text-rose-700 max-w-md mx-auto leading-relaxed">
+              Phiên giao dịch đã được khóa bởi Ban Quản Trị hoặc người tham gia đã hủy. Món đồ đã được tự động đưa về trạng thái ban đầu để sẵn sàng chia sẻ cho cộng đồng.
             </p>
             <div className="pt-2 flex flex-wrap justify-center gap-2.5">
               {isActuallyGiver && transaction?.item_id && (
@@ -984,7 +1131,7 @@ function TradeStepperContent() {
         )}
 
         {/* CANCELLATION FOOTER BAR (chỉ dc hủy trước bước xác nhận của ng kia) */}
-        {!isCompleted && !isCancelled && isParticipant && (
+        {!isCompleted && !isCancelled && !isFrozen && !isItemDeleted && isParticipant && (
           <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
             <div className="text-slate-500">
               {canCancel ? (
@@ -1144,37 +1291,39 @@ function TradeStepperContent() {
             </div>
 
             {/* Quick Suggestion Chips */}
-            <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-              <span className="text-[11px] font-semibold text-slate-400 shrink-0">Gợi ý nhanh:</span>
-              <button
-                type="button"
-                onClick={() => setChatInput('Mình đã đến điểm hẹn rồi nhé!')}
-                className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-slate-600 text-[11px] font-medium shrink-0 transition-colors cursor-pointer"
-              >
-                📍 Đã đến điểm hẹn
-              </button>
-              <button
-                type="button"
-                onClick={() => setChatInput('Mình đang mặc áo khoác ở cổng chính.')}
-                className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-slate-600 text-[11px] font-medium shrink-0 transition-colors cursor-pointer"
-              >
-                👕 Mô tả vị trí / áo
-              </button>
-              <button
-                type="button"
-                onClick={() => setChatInput('Khoảng 5-10 phút nữa mình có mặt ạ!')}
-                className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-slate-600 text-[11px] font-medium shrink-0 transition-colors cursor-pointer"
-              >
-                ⏳ 5-10 phút nữa đến
-              </button>
-              <button
-                type="button"
-                onClick={() => setChatInput('Bạn đến điểm hẹn chưa ạ?')}
-                className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-slate-600 text-[11px] font-medium shrink-0 transition-colors cursor-pointer"
-              >
-                👋 Bạn đến chưa?
-              </button>
-            </div>
+            {!isFrozen && !isCancelled && !isItemDeleted && (
+              <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+                <span className="text-[11px] font-semibold text-slate-400 shrink-0">Gợi ý nhanh:</span>
+                <button
+                  type="button"
+                  onClick={() => setChatInput('Mình đã đến điểm hẹn rồi nhé!')}
+                  className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-slate-600 text-[11px] font-medium shrink-0 transition-colors cursor-pointer"
+                >
+                  📍 Đã đến điểm hẹn
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChatInput('Mình đang mặc áo khoác ở cổng chính.')}
+                  className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-slate-600 text-[11px] font-medium shrink-0 transition-colors cursor-pointer"
+                >
+                  👕 Mô tả vị trí / áo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChatInput('Khoảng 5-10 phút nữa mình có mặt ạ!')}
+                  className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-slate-600 text-[11px] font-medium shrink-0 transition-colors cursor-pointer"
+                >
+                  ⏳ 5-10 phút nữa đến
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChatInput('Bạn đến điểm hẹn chưa ạ?')}
+                  className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-[#EAF7F2] hover:text-[#0F5B4B] text-slate-600 text-[11px] font-medium shrink-0 transition-colors cursor-pointer"
+                >
+                  👋 Bạn đến chưa?
+                </button>
+              </div>
+            )}
 
             {/* Chat Input Form */}
             <form onSubmit={handleSendChatMessage} className="flex items-center gap-2 pt-1">
@@ -1182,13 +1331,22 @@ function TradeStepperContent() {
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Nhắn tin với đối tác trao đồ..."
-                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0F5B4B] text-xs sm:text-sm bg-slate-50/50"
+                disabled={isFrozen || isCancelled || isItemDeleted || isSendingMsg}
+                placeholder={
+                  isItemDeleted
+                    ? 'Món đồ đã bị xóa hoàn toàn khỏi kho, tính năng giao tiếp đã đóng.'
+                    : isFrozen
+                    ? 'Phiên trao đổi đang bị đóng băng bởi Ban Quản Trị, tạm khóa gửi tin nhắn...'
+                    : isCancelled
+                    ? 'Phiên giao dịch đã kết thúc, không thể gửi tin nhắn...'
+                    : 'Nhắn tin với đối tác trao đồ...'
+                }
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0F5B4B] text-xs sm:text-sm bg-slate-50/50 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
               />
               <button
                 type="submit"
-                disabled={!chatInput.trim() || isSendingMsg}
-                className="px-4 py-2.5 rounded-xl bg-[#0F5B4B] hover:bg-[#0A3F34] text-white font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-40 cursor-pointer"
+                disabled={isFrozen || isCancelled || isItemDeleted || !chatInput.trim() || isSendingMsg}
+                className="px-4 py-2.5 rounded-xl bg-[#0F5B4B] hover:bg-[#0A3F34] text-white font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
               >
                 <Send className="w-3.5 h-3.5" /> Gửi
               </button>

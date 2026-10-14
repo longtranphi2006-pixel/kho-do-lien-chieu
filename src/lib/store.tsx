@@ -1149,6 +1149,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (isSupabaseConfigured() && supabase) {
       supabase.from('items').update(updates).eq('id', id).then(() => {});
     }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
+    }
   };
 
   const deleteItem = (id: string) => {
@@ -1208,6 +1212,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
+      window.dispatchEvent(new CustomEvent('kdlc-trades-updated'));
     }
   };
 
@@ -1552,10 +1557,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const adminHideItem = (itemId: string) => {
     updateItem(itemId, { status: 'HIDDEN' });
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('items').update({ status: 'HIDDEN' }).eq('id', itemId).then(() => {});
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
+      window.dispatchEvent(new CustomEvent('kdlc-trades-updated'));
+    }
   };
 
   const adminRestoreItem = (itemId: string) => {
     updateItem(itemId, { status: 'ACTIVE' });
+    if (isSupabaseConfigured() && supabase) {
+      supabase.from('items').update({ status: 'ACTIVE' }).eq('id', itemId).then(() => {});
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
+      window.dispatchEvent(new CustomEvent('kdlc-trades-updated'));
+    }
   };
 
   const getTransactionById = (id: string): Transaction | undefined => {
@@ -1920,7 +1939,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (currentUser && isUserLocked(currentUser)) {
       throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
     }
-    const trans = transactions.find((t) => t.id === transactionId);
+    let trans = transactions.find((t) => t.id === transactionId);
+    if (!trans && isSupabaseConfigured() && supabase) {
+      try {
+        const { data: dbTx } = await supabase.from('transactions').select('*').eq('id', transactionId).maybeSingle();
+        if (dbTx) {
+          trans = dbTx;
+        }
+      } catch (err) {
+        console.warn('Fallback fetch trade error in cancelTrade:', err);
+      }
+    }
     if (!trans) throw new Error('Không tìm thấy phiên giao dịch');
 
     const myAliasIds = getUserAliasIds(currentUser?.id);
@@ -1954,17 +1983,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 1. Update transaction status to CANCELLED and reset confirmations
     setTransactions((prev) => {
-      const next = prev.map((t) =>
-        t.id === transactionId
-          ? {
-              ...t,
+      const exists = prev.some((t) => t.id === transactionId);
+      const next = exists
+        ? prev.map((t) =>
+            t.id === transactionId
+              ? {
+                  ...t,
+                  status: 'CANCELLED' as TradeStatus,
+                  giver_confirmed: false,
+                  receiver_confirmed: false,
+                  completed_at: undefined,
+                }
+              : t
+          )
+        : [
+            {
+              ...trans,
               status: 'CANCELLED' as TradeStatus,
               giver_confirmed: false,
               receiver_confirmed: false,
               completed_at: undefined,
-            }
-          : t
-      );
+            },
+            ...prev,
+          ];
       try {
         localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
       } catch {}
@@ -1974,13 +2015,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 2. Return item to ACTIVE (initial state like newly posted)
     updateItem(trans.item_id, { status: 'ACTIVE' });
     if (isSupabaseConfigured() && supabase) {
-      supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id).then(() => {});
-      supabase.from('transactions').update({
-        status: 'CANCELLED',
-        giver_confirmed: false,
-        receiver_confirmed: false,
-        completed_at: null,
-      }).eq('id', transactionId).then(() => {});
+      try {
+        await supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id);
+        await supabase.from('transactions').update({
+          status: 'CANCELLED',
+          giver_confirmed: false,
+          receiver_confirmed: false,
+          completed_at: null,
+        }).eq('id', transactionId);
+      } catch (err) {
+        console.warn('Supabase cancel trade error:', err);
+      }
     }
 
     if (typeof window !== 'undefined') {
@@ -2056,12 +2101,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (currentUser && isUserLocked(currentUser)) {
       throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng.');
     }
-    const trans = transactions.find((t) => t.id === transactionId);
+    let trans = transactions.find((t) => t.id === transactionId);
+    if (!trans && isSupabaseConfigured() && supabase) {
+      try {
+        const { data: dbTx } = await supabase.from('transactions').select('*').eq('id', transactionId).maybeSingle();
+        if (dbTx) {
+          trans = dbTx;
+        }
+      } catch {}
+    }
     if (!trans) throw new Error('Không tìm thấy phiên giao dịch');
 
     const nextStatus: TradeStatus = 'ACCEPTED';
     setTransactions((prev) => {
-      const next = prev.map((t) => (t.id === transactionId ? { ...t, status: nextStatus, completed_at: undefined } : t));
+      const exists = prev.some((t) => t.id === transactionId);
+      const next = exists
+        ? prev.map((t) => (t.id === transactionId ? { ...t, status: nextStatus, completed_at: undefined } : t))
+        : [{ ...trans, status: nextStatus, completed_at: undefined }, ...prev];
       try {
         localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
       } catch {}
@@ -2071,8 +2127,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     updateItem(trans.item_id, { status: 'IN_PROGRESS' });
 
     if (isSupabaseConfigured() && supabase) {
-      supabase.from('transactions').update({ status: nextStatus, completed_at: null }).eq('id', transactionId).then(() => {});
-      supabase.from('items').update({ status: 'IN_PROGRESS' }).eq('id', trans.item_id).then(() => {});
+      try {
+        await supabase.from('transactions').update({ status: nextStatus, completed_at: null }).eq('id', transactionId);
+        await supabase.from('items').update({ status: 'IN_PROGRESS' }).eq('id', trans.item_id);
+      } catch {}
     }
 
     const targetItem = getItemById(trans.item_id) || items.find((i) => i.id === trans.item_id);

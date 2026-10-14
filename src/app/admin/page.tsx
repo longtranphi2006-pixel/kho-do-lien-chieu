@@ -1412,15 +1412,15 @@ function AdminDashboardPageContent() {
 
                               <div className="space-y-3">
                                 {/* Actions for Item */}
-                                {(report.target_type === 'ITEM' || resolvedTargetItem) && (
+                                {(report.target_type === 'ITEM' || resolvedTargetItem || targetTrade?.item_id) && (
                                   <div className="space-y-1.5 pb-2.5 border-b border-slate-200/80">
                                     <div className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
                                       <Tag className="w-3 h-3 text-[#0F5B4B]" /> Món đồ / Bài viết liên quan:
                                     </div>
                                     <div className="flex flex-wrap gap-1.5">
-                                      {resolvedTargetItem && (
+                                      {(resolvedTargetItem || targetTrade?.item_id) && (
                                         <Link
-                                          href={`/items/${resolvedTargetItem.id}`}
+                                          href={`/items/${resolvedTargetItem?.id || targetTrade?.item_id}`}
                                           target="_blank"
                                           className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold flex items-center gap-1 shadow-2xs"
                                         >
@@ -1428,40 +1428,51 @@ function AdminDashboardPageContent() {
                                         </Link>
                                       )}
 
-                                      {resolvedTargetItem && resolvedTargetItem.status === 'HIDDEN' ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            adminRestoreItem(resolvedTargetItem.id);
-                                            setReportActionMsg(`Đã mở lại sản phẩm "${resolvedTargetItem.title}" lên kho đồ.`);
-                                          }}
-                                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
-                                          title="Mở đóng băng để sản phẩm quay lại kho đồ"
-                                        >
-                                          <Eye className="w-3.5 h-3.5" /> Mở lại sản phẩm (Mở đóng băng)
-                                        </button>
-                                      ) : resolvedTargetItem ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            adminHideItem(resolvedTargetItem.id);
-                                            setReportActionMsg(`Đã đóng băng tạm khóa món đồ "${resolvedTargetItem.title}".`);
-                                          }}
-                                          className="px-2.5 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
-                                          title="Đóng băng món đồ này khỏi kho đồ"
-                                        >
-                                          <EyeOff className="w-3.5 h-3.5" /> Đóng băng món đồ (Tạm khóa)
-                                        </button>
-                                      ) : null}
+                                      {(() => {
+                                        const actualItemId = resolvedTargetItem?.id || targetTrade?.item_id || (report.target_type === 'ITEM' ? report.target_id : undefined);
+                                        const itm = actualItemId ? (items.find((i) => i.id === actualItemId) || resolvedTargetItem) : null;
+                                        const isHidden = itm?.status === 'HIDDEN';
+
+                                        if (!actualItemId) return null;
+
+                                        return isHidden ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              adminRestoreItem(actualItemId);
+                                              setReportActionMsg(`Đã mở lại sản phẩm "${itm?.title || actualItemId}" lên kho đồ.`);
+                                            }}
+                                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                                            title="Mở đóng băng để sản phẩm quay lại kho đồ"
+                                          >
+                                            <Eye className="w-3.5 h-3.5" /> Mở lại sản phẩm (Mở đóng băng)
+                                          </button>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              adminHideItem(actualItemId);
+                                              setReportActionMsg(`Đã đóng băng tạm khóa món đồ "${itm?.title || actualItemId}".`);
+                                            }}
+                                            className="px-2.5 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                                            title="Đóng băng món đồ này khỏi kho đồ"
+                                          >
+                                            <EyeOff className="w-3.5 h-3.5" /> Đóng băng món đồ (Tạm khóa)
+                                          </button>
+                                        );
+                                      })()}
 
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          const itemId = resolvedTargetItem?.id || report.target_id;
+                                          const itemId = resolvedTargetItem?.id || targetTrade?.item_id || (report.target_type === 'ITEM' ? report.target_id : undefined);
+                                          if (!itemId) {
+                                            alert('Không tìm thấy mã món đồ để xóa.');
+                                            return;
+                                          }
                                           if (confirm(`Bạn có chắc chắn muốn xóa hoàn toàn bài đăng này khỏi kho đồ? Món đồ sẽ biến mất vĩnh viễn khỏi toàn bộ hệ thống.`)) {
                                             try {
                                               deleteItem(itemId);
-                                              resolveReport(report.id, 'RESOLVE', 'Admin đã xóa hoàn toàn bài viết vi phạm khỏi kho đồ.');
                                               setReportActionMsg(`Đã xóa hoàn toàn bài đăng khỏi kho đồ.`);
                                             } catch (err: any) {
                                               alert('Lỗi khi xóa bài: ' + (err?.message || 'Không thể thực hiện'));
@@ -1484,54 +1495,62 @@ function AdminDashboardPageContent() {
                                       <Repeat className="w-3 h-3 text-[#0F5B4B]" /> Phiên giao dịch liên quan:
                                     </div>
                                     <div className="flex flex-wrap gap-1.5">
-                                      {targetTrade && (
-                                        <Link
-                                          href={`/trades/${targetTrade.id}`}
-                                          target="_blank"
-                                          className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold flex items-center gap-1 shadow-2xs"
-                                        >
-                                          <ExternalLink className="w-3 h-3" /> Vào phòng giao dịch (#{targetTrade.id})
-                                        </Link>
-                                      )}
+                                      {(() => {
+                                        const actualTradeId = targetTrade?.id || (report.target_type === 'TRADE' ? report.target_id : undefined);
+                                        if (!actualTradeId) return null;
 
-                                      {targetTrade && targetTrade.status !== 'CANCELLED' ? (
-                                        <button
-                                          type="button"
-                                          onClick={async () => {
-                                            if (confirm(`Bạn có chắc muốn KHÓA giao dịch #${targetTrade.id} và đưa trạng thái món đồ về ban đầu (như lúc mới đăng)?`)) {
-                                              try {
-                                                await cancelTrade(targetTrade.id, 'Admin khóa giao dịch do vi phạm quy tắc cộng đồng');
-                                                resolveReport(report.id, 'RESOLVE', 'Admin đã can thiệp khóa giao dịch và đưa món đồ về kho.');
-                                                setReportActionMsg(`Đã khóa giao dịch #${targetTrade.id} và đưa món đồ về trạng thái ban đầu.`);
-                                              } catch (err: any) {
-                                                alert('Lỗi khi khóa giao dịch: ' + (err?.message || 'Không thể thực hiện'));
-                                              }
-                                            }
-                                          }}
-                                          className="px-2.5 py-1.5 rounded-lg bg-rose-700 text-white hover:bg-rose-800 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
-                                          title="Khóa giao dịch và đưa trạng thái món đồ về ban đầu"
-                                        >
-                                          <Lock className="w-3.5 h-3.5" /> Khóa giao dịch & Trả về kho
-                                        </button>
-                                      ) : targetTrade && targetTrade.status === 'CANCELLED' ? (
-                                        <button
-                                          type="button"
-                                          onClick={async () => {
-                                            if (confirm(`Mở lại phiên giao dịch #${targetTrade.id}?`)) {
-                                              try {
-                                                await restoreTrade(targetTrade.id);
-                                                setReportActionMsg(`Đã mở lại phiên giao dịch #${targetTrade.id}.`);
-                                              } catch (err: any) {
-                                                alert('Lỗi khi mở lại: ' + (err?.message || 'Không thể thực hiện'));
-                                              }
-                                            }
-                                          }}
-                                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
-                                          title="Mở lại phiên giao dịch"
-                                        >
-                                          <Unlock className="w-3.5 h-3.5" /> Mở lại giao dịch
-                                        </button>
-                                      ) : null}
+                                        const isCancelled = targetTrade ? targetTrade.status === 'CANCELLED' : false;
+
+                                        return (
+                                          <>
+                                            <Link
+                                              href={`/trades/${actualTradeId}`}
+                                              target="_blank"
+                                              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold flex items-center gap-1 shadow-2xs"
+                                            >
+                                              <ExternalLink className="w-3 h-3" /> Vào phòng giao dịch (#{actualTradeId})
+                                            </Link>
+
+                                            {isCancelled ? (
+                                              <button
+                                                type="button"
+                                                onClick={async () => {
+                                                  if (confirm(`Mở lại phiên giao dịch #${actualTradeId}?`)) {
+                                                    try {
+                                                      await restoreTrade(actualTradeId);
+                                                      setReportActionMsg(`Đã mở lại phiên giao dịch #${actualTradeId}.`);
+                                                    } catch (err: any) {
+                                                      alert('Lỗi khi mở lại: ' + (err?.message || 'Không thể thực hiện'));
+                                                    }
+                                                  }
+                                                }}
+                                                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                                                title="Mở lại phiên giao dịch"
+                                              >
+                                                <Unlock className="w-3.5 h-3.5" /> Mở lại giao dịch
+                                              </button>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                onClick={async () => {
+                                                  if (confirm(`Bạn có chắc muốn KHÓA giao dịch #${actualTradeId} và đưa trạng thái món đồ về ban đầu (như lúc mới đăng)?`)) {
+                                                    try {
+                                                      await cancelTrade(actualTradeId, 'Admin khóa giao dịch do vi phạm quy tắc cộng đồng');
+                                                      setReportActionMsg(`Đã khóa giao dịch #${actualTradeId} và đưa món đồ về trạng thái ban đầu.`);
+                                                    } catch (err: any) {
+                                                      alert('Lỗi khi khóa giao dịch: ' + (err?.message || 'Không thể thực hiện'));
+                                                    }
+                                                  }
+                                                }}
+                                                className="px-2.5 py-1.5 rounded-lg bg-rose-700 text-white hover:bg-rose-800 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                                                title="Khóa giao dịch và đưa trạng thái món đồ về ban đầu"
+                                              >
+                                                <Lock className="w-3.5 h-3.5" /> Khóa giao dịch & Trả về kho
+                                              </button>
+                                            )}
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   </div>
                                 )}
