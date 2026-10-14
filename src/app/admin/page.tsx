@@ -20,6 +20,7 @@ import {
   getAiModerationConfig,
   saveAiModerationConfig,
 } from '@/lib/aiConfig';
+import { LockUserModal } from '@/components/common/LockUserModal';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -75,6 +76,9 @@ function AdminDashboardPageContent() {
     rejectItem,
     deleteItem,
     toggleLockUser,
+    lockUser,
+    unlockUser,
+    isUserLocked,
     reports,
     resolveReport,
     adminHideItem,
@@ -82,6 +86,20 @@ function AdminDashboardPageContent() {
     cancelTrade,
     isSupabaseMode,
   } = useAppStore();
+
+  const [userToLock, setUserToLock] = useState<Profile | null>(null);
+  const [isLockModalOpen, setIsLockModalOpen] = useState(false);
+
+  const formatLockedStatus = (u: Profile) => {
+    if (!isUserLocked(u)) return null;
+    if (!u.locked_until) return 'Khóa vĩnh viễn';
+    const until = new Date(u.locked_until);
+    const diffHours = Math.round((until.getTime() - Date.now()) / (1000 * 3600));
+    if (diffHours <= 1) return 'Khóa còn < 1 giờ';
+    if (diffHours < 24) return `Khóa còn ${diffHours} giờ`;
+    const diffDays = Math.round(diffHours / 24);
+    return `Khóa đến ${until.toLocaleDateString('vi-VN')} (${diffDays} ngày)`;
+  };
 
   const [activeTab, setActiveTab] = useState<
     'analytics' | 'queue' | 'items' | 'users' | 'trades' | 'reports' | 'ai-rules'
@@ -940,8 +958,17 @@ function AdminDashboardPageContent() {
                           )}
                           <div>
                             <span className="font-semibold text-slate-900 block">{u.full_name}</span>
-                            {u.is_locked && (
-                              <span className="text-[10px] text-rose-600 font-bold">🔒 Tài khoản đang bị khóa</span>
+                            {isUserLocked(u) && (
+                              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                  <Lock className="w-2.5 h-2.5" /> {formatLockedStatus(u)}
+                                </span>
+                                {u.lock_reason && (
+                                  <span className="text-[10px] text-rose-600 truncate max-w-xs" title={u.lock_reason}>
+                                    Lý do: {u.lock_reason}
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>
@@ -964,25 +991,30 @@ function AdminDashboardPageContent() {
                       </td>
                       <td className="p-3 text-right whitespace-nowrap">
                         {u.role !== 'admin' && (
-                          <button
-                            type="button"
-                            onClick={() => toggleLockUser(u.id)}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer inline-flex items-center gap-1 ${
-                              u.is_locked
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                                : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
-                            }`}
-                          >
-                            {u.is_locked ? (
-                              <>
+                          <div className="flex items-center justify-end gap-1.5">
+                            {isUserLocked(u) ? (
+                              <button
+                                type="button"
+                                onClick={() => unlockUser(u.id)}
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                                title="Bấm để mở khóa tài khoản thành viên"
+                              >
                                 <Unlock className="w-3 h-3" /> Mở khóa
-                              </>
+                              </button>
                             ) : (
-                              <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setUserToLock(u);
+                                  setIsLockModalOpen(true);
+                                }}
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer inline-flex items-center gap-1 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
+                                title="Khóa tài khoản và chọn thời gian khóa"
+                              >
                                 <Lock className="w-3 h-3" /> Khóa tài khoản
-                              </>
+                              </button>
                             )}
-                          </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -1368,29 +1400,29 @@ function AdminDashboardPageContent() {
                             {(report.target_type === 'USER' || report.target_user_id) && (
                               <div className="flex flex-wrap gap-1.5 pt-1">
                                 {targetUser && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const userId = report.target_user_id || report.target_id;
-                                      toggleLockUser(userId);
-                                      setReportActionMsg(`Đã thay đổi trạng thái khóa tài khoản ${targetUser.full_name}.`);
-                                    }}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer ${
-                                      targetUser.is_locked
-                                        ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                                        : 'bg-rose-700 text-white hover:bg-rose-800'
-                                    }`}
-                                  >
-                                    {targetUser.is_locked ? (
-                                      <>
-                                        <Unlock className="w-3.5 h-3.5" /> Mở khóa tài khoản
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Lock className="w-3.5 h-3.5" /> Khóa tài khoản vi phạm
-                                      </>
-                                    )}
-                                  </button>
+                                  isUserLocked(targetUser) ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        unlockUser(targetUser.id);
+                                        setReportActionMsg(`Đã mở khóa tài khoản ${targetUser.full_name}.`);
+                                      }}
+                                      className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer bg-emerald-600 text-white hover:bg-emerald-700"
+                                    >
+                                      <Unlock className="w-3.5 h-3.5" /> Mở khóa tài khoản ({formatLockedStatus(targetUser)})
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setUserToLock(targetUser);
+                                        setIsLockModalOpen(true);
+                                      }}
+                                      className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer bg-rose-700 text-white hover:bg-rose-800"
+                                    >
+                                      <Lock className="w-3.5 h-3.5" /> Khóa tài khoản vi phạm
+                                    </button>
+                                  )
                                 )}
                               </div>
                             )}
@@ -2139,6 +2171,20 @@ function AdminDashboardPageContent() {
           </div>
         </div>
       )}
+
+      {/* Modal Khóa Tài Khoản với tùy chọn thời gian */}
+      <LockUserModal
+        isOpen={isLockModalOpen}
+        onClose={() => {
+          setIsLockModalOpen(false);
+          setUserToLock(null);
+        }}
+        user={userToLock}
+        onConfirmLock={({ userId, duration, customUntil, reason }) => {
+          lockUser({ userId, duration, customUntil, reason });
+          setReportActionMsg(`Đã khóa tài khoản thành viên thành công. Người dùng chỉ còn quyền ở chế độ vãng lai.`);
+        }}
+      />
     </div>
   );
 }

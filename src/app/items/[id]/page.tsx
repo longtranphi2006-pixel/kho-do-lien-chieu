@@ -63,6 +63,7 @@ function ItemDetailContent() {
     deleteItem,
     favorites,
     toggleFavorite,
+    isUserLocked,
   } = useAppStore();
   const item = getItemById(itemId);
 
@@ -411,6 +412,10 @@ function ItemDetailContent() {
     e.preventDefault();
     if (!currentUser) {
       router.push(`/auth?redirect=/items/${item.id}`);
+      return;
+    }
+    if (isUserLocked(currentUser)) {
+      alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai. Bạn không thể gửi yêu cầu nhận đồ.');
       return;
     }
     setIsSubmitting(true);
@@ -1182,11 +1187,24 @@ function ItemDetailContent() {
                       router.push(`/auth?redirect=/items/${item.id}`);
                       return;
                     }
+                    if (isUserLocked(currentUser)) {
+                      alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai. Bạn không thể gửi yêu cầu nhận đồ.');
+                      return;
+                    }
                     setShowRequestModal(true);
                   }}
-                  className="w-full py-4 rounded-2xl bg-[#0F5B4B] text-white font-bold text-base shadow-lg shadow-[#0F5B4B]/20 hover:bg-[#0A3F34] active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className={`w-full py-4 rounded-2xl font-bold text-base shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    currentUser && isUserLocked(currentUser)
+                      ? 'bg-slate-300 text-slate-600 shadow-none hover:bg-slate-300'
+                      : 'bg-[#0F5B4B] text-white shadow-[#0F5B4B]/20 hover:bg-[#0A3F34] active:scale-98'
+                  }`}
                 >
-                  {activeTrade ? (
+                  {currentUser && isUserLocked(currentUser) ? (
+                    <>
+                      <Lock className="w-5 h-5 text-slate-500" />
+                      Tài khoản bị khóa chức năng (Chế độ vãng lai)
+                    </>
+                  ) : activeTrade ? (
                     <>
                       <Users className="w-5 h-5" />
                       Đăng ký hàng chờ dự phòng {pendingRequests.length > 0 ? `(Đang có ${pendingRequests.length} bạn chờ)` : ''}
@@ -1207,6 +1225,11 @@ function ItemDetailContent() {
                     </>
                   )}
                 </button>
+                {currentUser && isUserLocked(currentUser) && (
+                  <p className="text-center text-xs text-rose-600 font-semibold">
+                    🔒 Bạn đang ở chế độ xem vãng lai, không thể gửi yêu cầu nhận hoặc đổi đồ.
+                  </p>
+                )}
                 {activeTrade && (
                   <p className="text-center text-[11px] text-slate-500">
                     💡 Món đồ đang được hẹn trao cho 1 bạn sinh viên. Nếu bạn phía trước hủy hẹn, chủ đồ sẽ có thể chọn bạn tiếp theo!

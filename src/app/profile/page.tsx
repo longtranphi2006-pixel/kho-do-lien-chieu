@@ -148,7 +148,7 @@ const processAvatarFile = (file: File): Promise<string> => {
 };
 
 export default function ProfilePage() {
-  const { currentUser, items, transactions, reviews, updateProfile, updateItem, deleteItem } = useAppStore();
+  const { currentUser, items, transactions, reviews, updateProfile, updateItem, deleteItem, isUserLocked } = useAppStore();
   const [activeTab, setActiveTab] = useState<'items' | 'trades' | 'reviews'>('items');
 
   // Edit Profile Modal State (10 User-Specified Fields)
@@ -194,6 +194,10 @@ export default function ProfilePage() {
   }
 
   const handleOpenEdit = () => {
+    if (isUserLocked(currentUser)) {
+      alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai. Bạn không thể chỉnh sửa thông tin lúc này.');
+      return;
+    }
     setFullName(currentUser.full_name || '');
     setAvatarUrl(currentUser.avatar_url || '');
     setBio(currentUser.bio || '');
@@ -234,6 +238,10 @@ export default function ProfilePage() {
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isUserLocked(currentUser)) {
+      alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai. Bạn không thể cập nhật thông tin.');
+      return;
+    }
     if (!fullName.trim()) {
       alert('Vui lòng nhập họ và tên của bạn.');
       return;
@@ -353,6 +361,40 @@ export default function ProfilePage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      {/* Locked Account Notice Banner */}
+      {isUserLocked(currentUser) && (
+        <div className="bg-gradient-to-r from-rose-50 via-red-50 to-amber-50 border-2 border-rose-300 rounded-3xl p-5 text-rose-900 shadow-sm animate-fade-in flex flex-col sm:flex-row items-start gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-rose-600/20">
+            <Lock className="w-6 h-6" />
+          </div>
+          <div className="flex-1 space-y-1.5 w-full">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-extrabold text-base text-rose-950 flex items-center gap-2">
+                Tài khoản đang bị khóa tất cả chức năng (Chế độ Vãng lai)
+              </h3>
+              <span className="px-3 py-1 rounded-full bg-rose-200 text-rose-900 text-xs font-bold border border-rose-300">
+                {currentUser.locked_until
+                  ? `Khóa đến: ${new Date(currentUser.locked_until).toLocaleString('vi-VN')}`
+                  : 'Khóa vĩnh viễn'}
+              </span>
+            </div>
+            <p className="text-xs text-rose-800 leading-relaxed">
+              <strong>Lý do xử lý:</strong> {currentUser.lock_reason || 'Vi phạm nội quy an toàn cộng đồng sinh viên hoặc giao dịch thương mại.'}
+            </p>
+            <div className="p-3 bg-white/90 rounded-2xl border border-rose-200 text-[11px] text-slate-700 space-y-1 mt-2">
+              <p className="font-bold text-rose-950">Quy định áp dụng trong thời gian khóa:</p>
+              <ul className="list-disc list-inside space-y-0.5 text-slate-600">
+                <li>Tài khoản chỉ được sử dụng ở chế độ <strong>Khách vãng lai</strong> (chỉ có quyền xem thông tin công khai).</li>
+                <li>Vô hiệu hóa quyền đăng món đồ mới lên kho.</li>
+                <li>Vô hiệu hóa quyền gửi yêu cầu nhận đồ hoặc tham gia hàng chờ.</li>
+                <li>Vô hiệu hóa tính năng nhắn tin trao đổi trực tiếp và xác nhận hoàn tất giao dịch.</li>
+                <li>Vô hiệu hóa quyền chỉnh sửa thông tin tài khoản.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Profile Header Card */}
       <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/90 shadow-sm relative overflow-hidden">
         {/* Subtle accent header line */}

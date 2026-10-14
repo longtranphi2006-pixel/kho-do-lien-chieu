@@ -70,6 +70,14 @@ interface AppContextType {
   favorites: string[];
   toggleFavorite: (itemId: string) => void;
   toggleLockUser: (userId: string) => void;
+  lockUser: (params: {
+    userId: string;
+    duration: '1_HOUR' | '1_DAY' | '1_WEEK' | '1_MONTH' | 'PERMANENT' | 'CUSTOM';
+    customUntil?: string;
+    reason: string;
+  }) => void;
+  unlockUser: (userId: string) => void;
+  isUserLocked: (user?: Profile | null) => boolean;
   reports: ReportItem[];
   submitReport: (params: {
     targetType: ReportTargetType;
@@ -101,24 +109,50 @@ const STORAGE_KEYS = {
   REPORTS: 'kdlc_reports_v3',
 };
 
+export const isUserLocked = (p?: Profile | null): boolean => {
+  if (!p) return false;
+  if (!p.is_locked) return false;
+  if (p.locked_until) {
+    const until = new Date(p.locked_until).getTime();
+    if (!isNaN(until) && Date.now() > until) {
+      return false; // Lock expired!
+    }
+  }
+  return true;
+};
+
 export const hydrateProfile = (p: Profile): Profile => {
+  let updated: Profile = { ...p };
   if (p.address && typeof p.address === 'string' && p.address.startsWith('{') && p.address.endsWith('}')) {
     try {
       const parsed = JSON.parse(p.address);
       if (parsed && typeof parsed === 'object') {
-        return {
-          ...p,
+        updated = {
+          ...updated,
           address: typeof parsed.address === 'string' ? parsed.address : p.address,
           bio: parsed.bio ?? p.bio,
           target_group: parsed.target_group ?? p.target_group,
           living_area: parsed.living_area ?? p.living_area,
           preferred_contact: parsed.preferred_contact ?? p.preferred_contact,
           password: parsed.password ?? p.password,
+          is_locked: parsed.is_locked !== undefined ? parsed.is_locked : p.is_locked,
+          locked_until: parsed.locked_until ?? p.locked_until,
+          lock_reason: parsed.lock_reason ?? p.lock_reason,
         };
       }
     } catch {}
   }
-  return p;
+
+  // Auto-expire lock if time has passed
+  if (updated.is_locked && updated.locked_until) {
+    const until = new Date(updated.locked_until).getTime();
+    if (!isNaN(until) && Date.now() > until) {
+      updated.is_locked = false;
+      updated.locked_until = undefined;
+    }
+  }
+
+  return updated;
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -796,6 +830,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateProfile = (updates: Partial<Omit<Profile, 'id' | 'created_at'>>) => {
     if (!currentUser) return;
+    if (isUserLocked(currentUser)) {
+      alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
+      return;
+    }
     const updatedUser: Profile = {
       ...currentUser,
       ...updates,
@@ -900,6 +938,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addItem = (newItemData: Omit<Item, 'id' | 'created_at' | 'favorites_count'>): Item => {
+    if (currentUser && isUserLocked(currentUser)) {
+      throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
+    }
     const authorProfile = currentUser || profiles.find((p) => p.id === newItemData.user_id);
     const newItem: Item = {
       ...newItemData,
@@ -1016,24 +1057,152 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const toggleLockUser = (userId: string) => {
-    let nextLockedState = false;
+  const lockUser = (params: {
+    userId: string;
+    duration: '1_HOUR' | '1_DAY' | '1_WEEK' | '1_MONTH' | 'PERMANENT' | 'CUSTOM';
+    customUntil?: string;
+    reason: string;
+  }) => {
+    let lockedUntil: string | undefined = undefined;
+    if (params.duration === '1_HOUR') {
+      lockedUntil = new Date(Date.now() + 3600 * 1000).toISOString();
+    } else if (params.duration === '1_DAY') {
+      lockedUntil = new Date(Date.now() + 86400 * 1000).toISOString();
+    } else if (params.duration === '1_WEEK') {
+      lockedUntil = new Date(Date.now() + 7 * 86400 * 1000).toISOString();
+    } else if (params.duration === '1_MONTH') {
+      lockedUntil = new Date(Date.now() + 30 * 86400 * 1000).toISOString();
+    } else if (params.duration === 'CUSTOM' && params.customUntil) {
+      lockedUntil = params.customUntil;
+    }
+
     setProfiles((prev) => {
       const updated = prev.map((u) => {
-        if (u.id === userId) {
-          nextLockedState = !u.is_locked;
-          return { ...u, is_locked: nextLockedState };
+        if (u.id === params.userId) {
+          let currentMeta: Record<string, any> = {};
+          try {
+            if (u.address?.startsWith('{')) currentMeta = JSON.parse(u.address);
+          } catch {}
+
+          const nextMeta = {
+            ...currentMeta,
+            is_locked: true,
+            locked_until: lockedUntil,
+            lock_reason: params.reason,
+          };
+
+          const updatedUser: Profile = {
+            ...u,
+            is_locked: true,
+            locked_until: lockedUntil,
+            lock_reason: params.reason,
+            address: JSON.stringify(nextMeta),
+          };
+
+          if (isSupabaseConfigured() && supabase) {
+            (async () => {
+              try {
+                await supabase.from('profiles').update({
+                  is_locked: true,
+                  address: JSON.stringify(nextMeta),
+                }).eq('id', params.userId);
+              } catch {}
+            })();
+          }
+
+          return updatedUser;
         }
         return u;
       });
+
       try {
         localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(updated));
       } catch {}
       return updated;
     });
 
-    if (isSupabaseConfigured() && supabase) {
-      supabase.from('profiles').update({ is_locked: nextLockedState }).eq('id', userId).then(() => {});
+    const lockNotif: NotificationItem = {
+      id: `notif-lock-${Date.now()}`,
+      user_id: params.userId,
+      title: 'Tài khoản của bạn đã bị khóa chức năng 🔒',
+      content: `Tài khoản bị tạm khóa đến ${lockedUntil ? new Date(lockedUntil).toLocaleString('vi-VN') : 'khi có thông báo mới'}. Lý do: "${params.reason}". Bạn hiện chỉ có quyền hoạt động ở chế độ vãng lai.`,
+      is_read: false,
+      action_link: '/profile',
+      type: 'system',
+      created_at: new Date().toISOString(),
+    };
+    pushNotification(lockNotif);
+  };
+
+  const unlockUser = (userId: string) => {
+    setProfiles((prev) => {
+      const updated = prev.map((u) => {
+        if (u.id === userId) {
+          let currentMeta: Record<string, any> = {};
+          try {
+            if (u.address?.startsWith('{')) currentMeta = JSON.parse(u.address);
+          } catch {}
+
+          const nextMeta = {
+            ...currentMeta,
+            is_locked: false,
+            locked_until: null,
+            lock_reason: null,
+          };
+
+          const updatedUser: Profile = {
+            ...u,
+            is_locked: false,
+            locked_until: undefined,
+            lock_reason: undefined,
+            address: JSON.stringify(nextMeta),
+          };
+
+          if (isSupabaseConfigured() && supabase) {
+            (async () => {
+              try {
+                await supabase.from('profiles').update({
+                  is_locked: false,
+                  address: JSON.stringify(nextMeta),
+                }).eq('id', userId);
+              } catch {}
+            })();
+          }
+
+          return updatedUser;
+        }
+        return u;
+      });
+
+      try {
+        localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    const unlockNotif: NotificationItem = {
+      id: `notif-unlock-${Date.now()}`,
+      user_id: userId,
+      title: 'Tài khoản của bạn đã được mở khóa ✅',
+      content: 'Ban Quản Trị đã mở khóa tài khoản cho bạn. Bạn hiện có thể tiếp tục chia sẻ và nhận đồ.',
+      is_read: false,
+      action_link: '/profile',
+      type: 'system',
+      created_at: new Date().toISOString(),
+    };
+    pushNotification(unlockNotif);
+  };
+
+  const toggleLockUser = (userId: string) => {
+    const user = profiles.find((u) => u.id === userId);
+    if (user?.is_locked) {
+      unlockUser(userId);
+    } else {
+      lockUser({
+        userId,
+        duration: '1_DAY',
+        reason: 'Khóa tài khoản theo yêu cầu của Quản trị viên',
+      });
     }
   };
 
@@ -1047,6 +1216,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     reason: ReportReason;
     description: string;
   }): ReportItem => {
+    if (currentUser && isUserLocked(currentUser)) {
+      throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
+    }
     const reasonLabels: Record<ReportReason, string> = {
       COMMERCIAL_MONEY: 'Tiền bạc & Buôn bán thương mại',
       PROHIBITED_SUBSTANCE: 'Chất cấm & Hàng nguy hiểm',
@@ -1226,6 +1398,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!currentUser) {
       throw new Error('Vui lòng đăng nhập để thực hiện yêu cầu nhận đồ');
     }
+    if (isUserLocked(currentUser)) {
+      throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai, không thể gửi yêu cầu nhận đồ.');
+    }
     const receiverId = currentUser.id;
     const receiverName = currentUser.full_name;
 
@@ -1306,6 +1481,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const advanceTradeStatus = (transactionId: string, nextStatus: TradeStatus) => {
+    if (currentUser && isUserLocked(currentUser)) {
+      throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
+    }
     setTransactions((prev) =>
       prev.map((t) => {
         if (t.id !== transactionId) return t;
@@ -1398,6 +1576,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const confirmTradeHandover = async (transactionId: string, role: 'giver' | 'receiver') => {
+    if (currentUser && isUserLocked(currentUser)) {
+      throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
+    }
     let completedTrans: Transaction | null = null;
     const isGiver = role === 'giver';
 
@@ -1548,6 +1729,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const cancelTrade = async (transactionId: string, reason?: string) => {
+    if (currentUser && isUserLocked(currentUser)) {
+      throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
+    }
     const trans = transactions.find((t) => t.id === transactionId);
     if (!trans) throw new Error('Không tìm thấy phiên giao dịch');
 
@@ -1665,6 +1849,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const sendTradeMessage = async (transactionId: string, content: string) => {
+    if (currentUser && isUserLocked(currentUser)) {
+      throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai, không thể gửi tin nhắn.');
+    }
     if (!content.trim()) return;
     const trans = transactions.find((t) => t.id === transactionId);
     if (!trans) return;
@@ -1746,6 +1933,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     comment: string;
   }) => {
     if (!currentUser) throw new Error('Vui lòng đăng nhập để gửi đánh giá');
+    if (isUserLocked(currentUser)) {
+      throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
+    }
     const reviewerId = currentUser.id;
     const reviewerName = currentUser.full_name;
 
@@ -1842,13 +2032,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favorites,
         toggleFavorite,
         toggleLockUser,
+        lockUser,
+        unlockUser,
+        isUserLocked,
         reports,
         submitReport,
         resolveReport,
         adminHideItem,
         adminRestoreItem,
         isSupabaseMode: isSupabaseConfigured(),
-        activeRole: currentUser ? currentUser.role : 'guest',
+        activeRole: currentUser ? (isUserLocked(currentUser) ? 'guest' : currentUser.role) : 'guest',
       }}
     >
       {children}

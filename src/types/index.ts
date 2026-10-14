@@ -23,6 +23,8 @@ export interface Profile {
   completed_trades_count: number;
   role: UserRole;
   is_locked?: boolean;
+  locked_until?: string;
+  lock_reason?: string;
   address?: string;
   bio?: string;
   target_group?: string;

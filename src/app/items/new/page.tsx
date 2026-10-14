@@ -79,7 +79,7 @@ const processImageFile = (file: File): Promise<string> => {
 
 export default function NewItemPage() {
   const router = useRouter();
-  const { addItem, currentUser } = useAppStore();
+  const { addItem, currentUser, isUserLocked } = useAppStore();
 
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -101,8 +101,11 @@ export default function NewItemPage() {
   React.useEffect(() => {
     if (!currentUser) {
       router.push('/auth?redirect=/items/new');
+    } else if (isUserLocked(currentUser)) {
+      alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
+      router.push('/items');
     }
-  }, [currentUser, router]);
+  }, [currentUser, isUserLocked, router]);
 
   const handleFilesSelected = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;

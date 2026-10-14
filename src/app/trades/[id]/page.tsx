@@ -50,6 +50,7 @@ function TradeStepperContent() {
     sendTradeMessage,
     currentUser,
     allUsers,
+    isUserLocked,
   } = useAppStore();
 
   const storeTransaction = getTransactionById(tradeId);
@@ -57,8 +58,6 @@ function TradeStepperContent() {
   const [isLoadingDirect, setIsLoadingDirect] = useState(!storeTransaction);
 
   const [isUpdating, setIsUpdating] = useState(false);
-  // Allow user to switch viewing perspective during manual testing if needed
-  const [selectedRole, setSelectedRole] = useState<'auto' | 'giver' | 'receiver'>('auto');
 
   // Chat state
   const [chatInput, setChatInput] = useState('');
@@ -180,19 +179,7 @@ function TradeStepperContent() {
   const isActuallyReceiver = transaction ? myUserIds.has(transaction.receiver_id) : false;
   const isParticipant = isActuallyGiver || isActuallyReceiver;
 
-  let effectiveRole: 'giver' | 'receiver' = 'giver';
-  if (selectedRole === 'giver') {
-    effectiveRole = 'giver';
-  } else if (selectedRole === 'receiver') {
-    effectiveRole = 'receiver';
-  } else {
-    // 'auto': default based on logged-in account
-    if (isActuallyReceiver) {
-      effectiveRole = 'receiver';
-    } else {
-      effectiveRole = 'giver';
-    }
-  }
+  const effectiveRole: 'giver' | 'receiver' = isActuallyReceiver ? 'receiver' : 'giver';
 
   // 4 Stepper Steps mapping
   const steps = [
@@ -276,6 +263,10 @@ function TradeStepperContent() {
 
   const handleAdvance = (nextStatus: TradeStatus) => {
     if (!transaction) return;
+    if (currentUser && isUserLocked(currentUser)) {
+      alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
+      return;
+    }
     setIsUpdating(true);
     advanceTradeStatus(transaction.id, nextStatus);
     setTimeout(() => {
@@ -288,6 +279,10 @@ function TradeStepperContent() {
 
   const handleConfirmRole = (role: 'giver' | 'receiver') => {
     if (!transaction) return;
+    if (currentUser && isUserLocked(currentUser)) {
+      alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
+      return;
+    }
     setIsUpdating(true);
     confirmTradeHandover(transaction.id, role);
     setTimeout(() => {
@@ -318,6 +313,10 @@ function TradeStepperContent() {
   const handleSendChatMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!transaction || !chatInput.trim() || isSendingMsg) return;
+    if (currentUser && isUserLocked(currentUser)) {
+      alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai. Không thể gửi tin nhắn.');
+      return;
+    }
     setIsSendingMsg(true);
     try {
       await sendTradeMessage(transaction.id, chatInput.trim());
@@ -406,15 +405,15 @@ function TradeStepperContent() {
       <div>
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EAF7F2] text-[#0F5B4B] text-xs font-bold border border-[#A7E2CB] mb-2">
           <Clock className="w-3.5 h-3.5" />
-          Tiến Trình Trao Nhận 4 Bước (Xác nhận 2 chiều P2P)
+          Tiến Trình Trao Nhận Đồ Dùng
         </div>
         <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
           Theo dõi tiến độ trao đổi món đồ
         </h1>
       </div>
 
-      {/* Perspective Simulator Banner */}
-      <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+      {/* Role Indicator Banner */}
+      <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-md flex items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center text-emerald-400 shrink-0">
             <User className="w-4 h-4" />
@@ -426,38 +425,11 @@ function TradeStepperContent() {
             <div className="font-bold text-emerald-400 text-sm">
               {isParticipant
                 ? effectiveRole === 'giver'
-                  ? `👤 Bên Cho (Người A) - ${giver?.full_name || 'Chủ đồ'}`
-                  : `👤 Bên Nhận (Người B) - ${receiver?.full_name || 'Người xin đồ'}`
-                : `🔒 Người xem (Giao dịch giữa ${giver?.full_name || 'Người A'} & ${receiver?.full_name || 'Người B'})`}
+                  ? `👤 Bên Cho Đồ (Chủ món đồ: ${giver?.full_name || 'Bạn'})`
+                  : `👤 Bên Nhận Đồ (${receiver?.full_name || 'Bạn'})`
+                : `🔒 Người xem (Giao dịch giữa ${giver?.full_name || 'Bên cho'} & ${receiver?.full_name || 'Bên nhận'})`}
             </div>
           </div>
-        </div>
-
-        {/* Perspective Toggle Buttons */}
-        <div className="flex items-center gap-1.5 bg-white/10 p-1 rounded-xl self-start sm:self-auto">
-          <span className="text-[11px] text-slate-300 px-2 font-medium">Chuyển vai trò test:</span>
-          <button
-            type="button"
-            onClick={() => setSelectedRole('giver')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              effectiveRole === 'giver'
-                ? 'bg-[#0F5B4B] text-white shadow-xs'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-          >
-            Bên Cho (A)
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedRole('receiver')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              effectiveRole === 'receiver'
-                ? 'bg-teal-600 text-white shadow-xs'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-          >
-            Bên Nhận (B)
-          </button>
         </div>
       </div>
 
@@ -1070,7 +1042,7 @@ function TradeStepperContent() {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-sm sm:text-base text-white">
-                  Kênh Chat Trực Tiếp P2P
+                  Tin Nhắn & Trao Đổi Trực Tiếp
                 </h3>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
                   Riêng tư 2 bên
