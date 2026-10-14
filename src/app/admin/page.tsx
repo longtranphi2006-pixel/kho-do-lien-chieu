@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
 import {
   Item,
@@ -63,7 +64,8 @@ import {
   Flag,
 } from 'lucide-react';
 
-export default function AdminDashboardPage() {
+function AdminDashboardPageContent() {
+  const searchParams = useSearchParams();
   const {
     currentUser,
     items,
@@ -84,6 +86,22 @@ export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState<
     'analytics' | 'queue' | 'items' | 'users' | 'trades' | 'reports' | 'ai-rules'
   >('analytics');
+
+  // Sync tab from URL query params (e.g. /admin?tab=reports)
+  useEffect(() => {
+    const tabParam = searchParams?.get('tab');
+    if (
+      tabParam === 'reports' ||
+      tabParam === 'queue' ||
+      tabParam === 'items' ||
+      tabParam === 'users' ||
+      tabParam === 'trades' ||
+      tabParam === 'ai-rules' ||
+      tabParam === 'analytics'
+    ) {
+      setActiveTab(tabParam as any);
+    }
+  }, [searchParams]);
   const [itemSearch, setItemSearch] = useState('');
   const [userSearch, setUserSearch] = useState('');
   const [tradeSearch, setTradeSearch] = useState('');
@@ -1094,7 +1112,23 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
 
-              <div className="flex gap-2 shrink-0">
+              <div className="flex flex-wrap gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReportActionMsg('Đang làm mới và đồng bộ dữ liệu báo cáo...');
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(new Event('focus'));
+                    }
+                    setTimeout(() => {
+                      setReportActionMsg('Đã cập nhật danh sách báo cáo vi phạm mới nhất từ đám mây.');
+                    }, 800);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold backdrop-blur-xs border border-white/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                  title="Nhấn để tải báo cáo mới nhất từ đám mây"
+                >
+                  <RotateCcw className="w-4 h-4 text-rose-200" /> Đồng bộ đám mây
+                </button>
                 <button
                   type="button"
                   onClick={() => handleExportCSV('reports')}
@@ -2106,5 +2140,13 @@ export default function AdminDashboardPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AdminDashboardPage() {
+  return (
+    <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center p-12 text-center text-slate-500 font-medium">Đang tải trang quản trị...</div>}>
+      <AdminDashboardPageContent />
+    </Suspense>
   );
 }

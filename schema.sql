@@ -98,12 +98,41 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 6B. TABLE: REPORTS (Violations against items, users, trades, and chat messages)
+CREATE TABLE IF NOT EXISTS public.reports (
+  id TEXT PRIMARY KEY,
+  reporter_id TEXT NOT NULL,
+  reporter_name TEXT,
+  reporter_email TEXT,
+  target_type TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  target_title TEXT,
+  target_details TEXT,
+  target_user_id TEXT,
+  target_user_name TEXT,
+  reason TEXT NOT NULL,
+  reason_text TEXT NOT NULL,
+  description TEXT NOT NULL,
+  status TEXT DEFAULT 'PENDING',
+  admin_notes TEXT,
+  resolved_at TIMESTAMPTZ,
+  resolved_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- 7. ENABLE ROW LEVEL SECURITY & OPEN CLIENT ACCESS POLICIES
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
+
+-- Allow public read & write via client anon key
+CREATE POLICY "Public read reports" ON public.reports FOR SELECT USING (true);
+CREATE POLICY "Public write reports" ON public.reports FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public update reports" ON public.reports FOR UPDATE USING (true);
+CREATE POLICY "Public delete reports" ON public.reports FOR DELETE USING (true);
 
 -- Allow public read & write via client anon key
 CREATE POLICY "Public read profiles" ON public.profiles FOR SELECT USING (true);

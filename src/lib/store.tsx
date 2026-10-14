@@ -423,6 +423,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             );
           });
         }
+
+        // 6. Reports sync (Dual: Cloud Table + sys-reports-store in profiles)
+        let cloudReports: ReportItem[] = [];
+
+        // 6A. Try dedicated 'reports' table if migrated
+        try {
+          const { data: repData, error: repError } = await sb
+            .from('reports')
+            .select('*')
+            .order('created_at', { ascending: false });
+          if (!repError && Array.isArray(repData) && repData.length > 0) {
+            cloudReports = repData as ReportItem[];
+          }
+        } catch {}
+
+        // 6B. Check 'sys-reports-store' fallback record in profiles table
+        try {
+          const sysRepProfile = profilesRes.data?.find((p: any) => p.id === 'sys-reports-store');
+          if (sysRepProfile && sysRepProfile.address) {
+            const parsedSys = JSON.parse(sysRepProfile.address);
+            if (Array.isArray(parsedSys)) {
+              const existingIds = new Set(cloudReports.map((r) => r.id));
+              parsedSys.forEach((r: ReportItem) => {
+                if (!existingIds.has(r.id)) {
+                  cloudReports.push(r);
+                  existingIds.add(r.id);
+                }
+              });
+            }
+          }
+        } catch {}
+
+        if (cloudReports.length > 0) {
+          const cloudIds = new Set(cloudReports.map((r) => r.id));
+          setReports((prev) => {
+            const pendingLocal = prev.filter((r) => !cloudIds.has(r.id));
+            const merged = [...pendingLocal, ...cloudReports].sort(
+              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
+            try {
+              localStorage.setItem(STORAGE_KEYS.REPORTS, JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
+        }
       } catch (err) {
         console.warn('Supabase initial sync error:', err);
       }
@@ -462,6 +507,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         { event: '*', schema: 'public', table: 'profiles' },
         (payload) => {
           if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+            // Check if this is the sys-reports-store broadcast
+            if (payload.new.id === 'sys-reports-store' && payload.new.address) {
+              try {
+                const parsed = JSON.parse(payload.new.address);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  setReports((prev) => {
+                    const map = new Map(prev.map((r) => [r.id, r]));
+                    parsed.forEach((r: ReportItem) => map.set(r.id, r));
+                    const next = Array.from(map.values()).sort(
+                      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                    );
+                    try {
+                      localStorage.setItem(STORAGE_KEYS.REPORTS, JSON.stringify(next));
+                    } catch {}
+                    return next;
+                  });
+                }
+              } catch {}
+            }
+
             setProfiles((prev) => {
               const existingIdx = prev.findIndex((p) => p.id === payload.new.id);
               if (existingIdx >= 0) {
@@ -471,6 +536,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
               return [...prev, payload.new as Profile];
             });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reports' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setReports((prev) => [payload.new as ReportItem, ...prev.filter((r) => r.id !== payload.new.id)]);
+          } else if (payload.eventType === 'UPDATE') {
+            setReports((prev) => prev.map((r) => (r.id === payload.new.id ? (payload.new as ReportItem) : r)));
           }
         }
       )
@@ -494,8 +570,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         syncFromSupabase();
       }
     };
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEYS.REPORTS && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setReports(parsed);
+        } catch {}
+      }
+    };
+    const handleCustomReportUpdate = () => {
+      const saved = localStorage.getItem(STORAGE_KEYS.REPORTS);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) setReports(parsed);
+        } catch {}
+      }
+    };
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('kdlc-reports-updated', handleCustomReportUpdate);
 
     // Guaranteed polling heartbeat every 6 seconds across mobile & desktop
     const pollTimer = setInterval(() => {
@@ -507,6 +602,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       sb.removeChannel(channel);
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('kdlc-reports-updated', handleCustomReportUpdate);
       clearInterval(pollTimer);
     };
   }, []);
@@ -984,18 +1081,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updated;
     });
 
-    // Notify admins
     const adminNotif: NotificationItem = {
       id: `notif-rep-${Date.now()}`,
       user_id: 'usr-admin-bql',
       title: `Báo cáo vi phạm: [${params.targetType}]`,
       content: `${currentUser?.full_name || 'Một thành viên'} vừa báo cáo ${params.targetTitle || params.targetType} với lý do "${reasonLabels[params.reason]}".`,
       is_read: false,
-      action_link: '/admin',
+      action_link: '/admin?tab=reports',
       type: 'moderation',
       created_at: new Date().toISOString(),
     };
+
+    setReports((prev) => {
+      const updated = [newReport, ...prev];
+      try {
+        localStorage.setItem(STORAGE_KEYS.REPORTS, JSON.stringify(updated));
+      } catch {}
+
+      // Dual Cloud Sync for Supabase across all devices & browsers
+      if (isSupabaseConfigured() && supabase) {
+        const sb = supabase;
+        (async () => {
+          try {
+            await sb.from('reports').upsert(newReport);
+          } catch {}
+          try {
+            await sb.from('profiles').upsert({
+              id: 'sys-reports-store',
+              full_name: 'Hệ Thống Báo Cáo Vi Phạm',
+              role: 'admin',
+              address: JSON.stringify(updated),
+            });
+          } catch {}
+          try {
+            await sb.from('notifications').upsert(adminNotif);
+          } catch {}
+        })();
+      }
+
+      return updated;
+    });
+
     setNotifications((prev) => [adminNotif, ...prev]);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kdlc-reports-updated', { detail: newReport }));
+    }
 
     return newReport;
   };
@@ -1004,7 +1135,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setReports((prev) => {
       const updated = prev.map((r) => {
         if (r.id === reportId) {
-          return {
+          const resolvedItem: ReportItem = {
             ...r,
             status: (action === 'RESOLVE' ? 'RESOLVED' : 'DISMISSED') as ReportStatus,
             admin_notes:
@@ -1015,12 +1146,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             resolved_at: new Date().toISOString(),
             resolved_by: currentUser?.full_name || 'Ban Quản Trị Admin',
           };
+
+          if (isSupabaseConfigured() && supabase) {
+            (async () => {
+              try {
+                await supabase.from('reports').update({
+                  status: resolvedItem.status,
+                  admin_notes: resolvedItem.admin_notes,
+                  resolved_at: resolvedItem.resolved_at,
+                  resolved_by: resolvedItem.resolved_by,
+                }).eq('id', reportId);
+              } catch {}
+            })();
+          }
+
+          return resolvedItem;
         }
         return r;
       });
+
       try {
         localStorage.setItem(STORAGE_KEYS.REPORTS, JSON.stringify(updated));
       } catch {}
+
+      if (isSupabaseConfigured() && supabase) {
+        (async () => {
+          try {
+            await supabase.from('profiles').upsert({
+              id: 'sys-reports-store',
+              full_name: 'Hệ Thống Báo Cáo Vi Phạm',
+              role: 'admin',
+              address: JSON.stringify(updated),
+            });
+          } catch {}
+        })();
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('kdlc-reports-updated'));
+      }
+
       return updated;
     });
   };
