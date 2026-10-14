@@ -98,6 +98,12 @@ export default function NewItemPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [moderationResult, setModerationResult] = useState<ModerationResult | null>(null);
 
+  React.useEffect(() => {
+    if (!currentUser) {
+      router.push('/auth?redirect=/items/new');
+    }
+  }, [currentUser, router]);
+
   const handleFilesSelected = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     setIsProcessingPhotos(true);
@@ -131,6 +137,11 @@ export default function NewItemPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) {
+      alert('Vui lòng đăng nhập để đăng đồ dùng.');
+      router.push('/auth?redirect=/items/new');
+      return;
+    }
     if (images.length === 0) {
       alert('Vui lòng chọn ít nhất 1 hình ảnh món đồ.');
       return;
@@ -159,7 +170,7 @@ export default function NewItemPage() {
 
       // Create item in store with the AI moderation status
       const created = addItem({
-        user_id: currentUser?.id || 'usr-an-bachkhoa',
+        user_id: currentUser.id,
         title,
         description,
         category,
@@ -186,7 +197,7 @@ export default function NewItemPage() {
       setIsScanning(false);
       // Fallback publish
       const created = addItem({
-        user_id: currentUser?.id || 'usr-an-bachkhoa',
+        user_id: currentUser.id,
         title,
         description,
         category,

@@ -65,14 +65,15 @@ export const Navbar: React.FC = () => {
     );
   }, [currentUser, myUserIds, transactions]);
 
-  // Filter notifications for this user (or general)
-  const myNotifications = notifications.filter(
-    (n) =>
-      !currentUser ||
-      myUserIds.has(n.user_id) ||
-      n.user_id === 'usr-admin-bql' ||
-      (n.action_link && Array.from(myTransactionIds).some((tid) => n.action_link?.includes(tid)))
-  );
+  // Filter notifications for this user (empty for guests)
+  const myNotifications = currentUser
+    ? notifications.filter(
+        (n) =>
+          myUserIds.has(n.user_id) ||
+          n.user_id === 'usr-admin-bql' ||
+          (n.action_link && Array.from(myTransactionIds).some((tid) => n.action_link?.includes(tid)))
+      )
+    : [];
   const unreadCount = myNotifications.filter((n) => !n.is_read).length;
   const urgentTradeNotifs = myNotifications.filter((n) => n.type === 'trade' && !n.is_read);
 
@@ -161,8 +162,9 @@ export const Navbar: React.FC = () => {
                 <Search className="w-5 h-5" />
               </button>
 
-              {/* Notification Bell with Quick Action Dropdown */}
-              <div className="relative">
+              {/* Notification Bell with Quick Action Dropdown - Logged in users only */}
+              {mounted && currentUser && (
+                <div className="relative">
                 <button
                   type="button"
                   onClick={() => {
@@ -320,15 +322,16 @@ export const Navbar: React.FC = () => {
                   </div>
                 )}
               </div>
+            )}
 
-              {/* Desktop "+ Đăng đồ" button */}
-              <Link
-                href="/items/new"
-                className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#0F5B4B] text-white text-sm font-semibold hover:bg-[#0A3F34] shadow-sm shadow-[#0F5B4B]/20 transition-all hover:shadow-md"
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>+ Đăng đồ</span>
-              </Link>
+            {/* Desktop "+ Đăng đồ" button */}
+            <Link
+              href={currentUser ? "/items/new" : "/auth?redirect=/items/new"}
+              className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#0F5B4B] text-white text-sm font-semibold hover:bg-[#0A3F34] shadow-sm shadow-[#0F5B4B]/20 transition-all hover:shadow-md"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>+ Đăng đồ</span>
+            </Link>
 
               {/* User Avatar & Dropdown / Login button */}
               {mounted && currentUser ? (

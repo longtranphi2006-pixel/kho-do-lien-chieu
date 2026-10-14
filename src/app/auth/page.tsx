@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAppStore } from '@/lib/store';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
@@ -54,8 +54,10 @@ function parseJwt(token: string) {
   }
 }
 
-export default function AuthPage() {
+function AuthContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTarget = searchParams.get('redirect') || '/';
   const { allUsers, currentUser, login, loginWithOAuth, logout, registerUser } = useAppStore();
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -90,7 +92,7 @@ export default function AuthPage() {
                       payload.picture ||
                       'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
                   });
-                  router.push('/');
+                  router.push(redirectTarget);
                 }
               }
             },
@@ -153,7 +155,7 @@ export default function AuthPage() {
       if (mode === 'login') {
         const success = login(identifier.trim());
         if (success) {
-          router.push('/');
+          router.push(redirectTarget);
         }
       } else {
         if (!fullName.trim()) {
@@ -166,7 +168,7 @@ export default function AuthPage() {
           university,
           student_id: studentId.trim(),
         });
-        router.push('/');
+        router.push(redirectTarget);
       }
     }, 400);
   };
@@ -466,5 +468,13 @@ export default function AuthPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AuthPage() {
+  return (
+    <React.Suspense fallback={<div className="min-h-[80vh] flex items-center justify-center text-slate-500 text-sm">Đang tải...</div>}>
+      <AuthContent />
+    </React.Suspense>
   );
 }

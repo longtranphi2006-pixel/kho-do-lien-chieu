@@ -68,7 +68,7 @@ const STORAGE_KEYS = {
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [profiles, setProfiles] = useState<Profile[]>(MOCK_PROFILES);
-  const [currentUserId, setCurrentUserId] = useState<string | null>('usr-an-bachkhoa');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [items, setItems] = useState<Item[]>(MOCK_ITEMS);
   const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
   const [reviews, setReviews] = useState<Review[]>(MOCK_REVIEWS);
@@ -89,9 +89,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, savedUserId);
         } catch {}
       }
-      if (savedUserId !== null) {
-        // If explicitly set to empty string, user is logged out
-        setCurrentUserId(savedUserId ? savedUserId : null);
+      if (savedUserId && savedUserId.trim() !== '') {
+        setCurrentUserId(savedUserId);
+      } else {
+        setCurrentUserId(null);
       }
 
       const savedItems = localStorage.getItem(STORAGE_KEYS.ITEMS);
@@ -574,7 +575,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const logout = () => {
     setCurrentUserId(null);
     try {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, '');
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
     } catch {
       // ignore
     }
@@ -815,9 +816,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }): Transaction => {
     const targetItem = getItemById(params.itemId) || items.find((i) => i.id === params.itemId);
     if (!targetItem) throw new Error('Item not found');
-
-    const receiverId = currentUser?.id || 'usr-an-bachkhoa';
-    const receiverName = currentUser?.full_name || 'Một bạn sinh viên';
+    if (!currentUser) {
+      throw new Error('Vui lòng đăng nhập để thực hiện yêu cầu nhận đồ');
+    }
+    const receiverId = currentUser.id;
+    const receiverName = currentUser.full_name;
 
     const newTransaction: Transaction = {
       id: `tr-${Date.now()}`,
@@ -1214,8 +1217,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     rating: number;
     comment: string;
   }) => {
-    const reviewerId = currentUser?.id || 'usr-an-bachkhoa';
-    const reviewerName = currentUser?.full_name || 'Bạn cùng trao đổi';
+    if (!currentUser) throw new Error('Vui lòng đăng nhập để gửi đánh giá');
+    const reviewerId = currentUser.id;
+    const reviewerName = currentUser.full_name;
 
     const newReview: Review = {
       id: `rev-${Date.now()}`,

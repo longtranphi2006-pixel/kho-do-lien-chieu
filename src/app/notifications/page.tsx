@@ -60,14 +60,15 @@ export default function NotificationsPage() {
     );
   }, [currentUser, myUserIds, transactions]);
 
-  // Filter notifications relevant to current user (or show all if guest/testing)
-  const myNotifications = notifications.filter(
-    (n) =>
-      !currentUser ||
-      myUserIds.has(n.user_id) ||
-      n.user_id === 'usr-admin-bql' ||
-      (n.action_link && Array.from(myTransactionIds).some((tid) => n.action_link?.includes(tid)))
-  );
+  // Filter notifications relevant to current user
+  const myNotifications = currentUser
+    ? notifications.filter(
+        (n) =>
+          myUserIds.has(n.user_id) ||
+          n.user_id === 'usr-admin-bql' ||
+          (n.action_link && Array.from(myTransactionIds).some((tid) => n.action_link?.includes(tid)))
+      )
+    : [];
 
   // High priority action items (Trade requests / pending stepper approvals that are unread or actionable)
   const urgentTradeNotifs = myNotifications.filter(
@@ -109,6 +110,28 @@ export default function NotificationsPage() {
       return 'Gần đây';
     }
   };
+
+  if (mounted && !currentUser) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center space-y-4">
+        <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-[#0F5B4B] flex items-center justify-center mx-auto">
+          <Bell className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-800">
+          Chưa đăng nhập tài khoản
+        </h2>
+        <p className="text-slate-500 text-sm">
+          Vui lòng đăng nhập tài khoản để nhận và theo dõi các thông báo trao đổi đồ dùng của bạn.
+        </p>
+        <Link
+          href="/auth?redirect=/notifications"
+          className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#0F5B4B] text-white font-bold text-sm hover:bg-[#0A3F34] shadow-md shadow-[#0F5B4B]/20"
+        >
+          Đăng nhập ngay
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-6">

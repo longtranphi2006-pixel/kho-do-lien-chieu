@@ -633,7 +633,13 @@ function ItemDetailContent() {
               </div>
             ) : (
               <button
-                onClick={() => setShowRequestModal(true)}
+                onClick={() => {
+                  if (!currentUser) {
+                    router.push(`/auth?redirect=/items/${item.id}`);
+                    return;
+                  }
+                  setShowRequestModal(true);
+                }}
                 className="w-full py-4 rounded-2xl bg-[#0F5B4B] text-white font-bold text-base shadow-lg shadow-[#0F5B4B]/20 hover:bg-[#0A3F34] active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {item.purpose === 'FREE' ? (
