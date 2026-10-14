@@ -263,6 +263,14 @@ export default function ProfilePage() {
 
   // Items posted by current user
   const userItems = items.filter((i) => i.user_id === currentUser.id);
+  const [itemStatusFilter, setItemStatusFilter] = useState<'ACTIVE' | 'COMPLETED' | 'ALL'>('ACTIVE');
+  const activeUserItems = userItems.filter((i) => i.status !== 'COMPLETED');
+  const completedUserItems = userItems.filter((i) => i.status === 'COMPLETED');
+  const displayedUserItems = itemStatusFilter === 'ACTIVE'
+    ? activeUserItems
+    : itemStatusFilter === 'COMPLETED'
+    ? completedUserItems
+    : userItems;
 
   // Transactions involving current user (deduplicated per item so each item has at most 1 progress)
   const userTrades = React.useMemo(() => {
@@ -675,7 +683,7 @@ export default function ProfilePage() {
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
-          Món đồ đang cho ({userItems.length})
+          Món đồ đang cho ({activeUserItems.length})
         </button>
 
         <button
@@ -728,9 +736,47 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {userItems.length > 0 ? (
+          {userItems.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setItemStatusFilter('ACTIVE')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  itemStatusFilter === 'ACTIVE'
+                    ? 'bg-[#0F5B4B] text-white shadow-xs'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                Đang cho ({activeUserItems.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setItemStatusFilter('COMPLETED')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  itemStatusFilter === 'COMPLETED'
+                    ? 'bg-[#0F5B4B] text-white shadow-xs'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                Đã trao xong ({completedUserItems.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setItemStatusFilter('ALL')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  itemStatusFilter === 'ALL'
+                    ? 'bg-[#0F5B4B] text-white shadow-xs'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                Tất cả ({userItems.length})
+              </button>
+            </div>
+          )}
+
+          {displayedUserItems.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {userItems.map((item) => {
+              {displayedUserItems.map((item) => {
                 const tradingNow = isItemTrading(item.id);
                 const isHidden = item.status === 'HIDDEN';
                 const isCompleted = item.status === 'COMPLETED';
@@ -880,15 +926,23 @@ export default function ProfilePage() {
           ) : (
             <div className="bg-white rounded-3xl border border-slate-200 p-8 text-center space-y-3">
               <Gift className="w-12 h-12 text-slate-300 mx-auto" />
-              <div className="text-slate-700 font-bold">Bạn chưa đăng món đồ nào</div>
+              <div className="text-slate-700 font-bold">
+                {userItems.length > 0
+                  ? itemStatusFilter === 'ACTIVE'
+                    ? 'Bạn không có món đồ nào đang đăng (tất cả đã trao xong)'
+                    : 'Không có món đồ nào trong danh mục này'
+                  : 'Bạn chưa đăng món đồ nào'}
+              </div>
               <p className="text-slate-500 text-xs max-w-sm mx-auto">
-                Chia sẻ sách vở, giáo trình, quạt, đèn bàn hay đồ dùng không còn dùng đến để tích lũy điểm uy tín!
+                {userItems.length > 0
+                  ? 'Bạn có thể chọn xem lại các món đã trao xong ở bộ lọc phía trên hoặc đăng thêm món mới.'
+                  : 'Chia sẻ sách vở, giáo trình, quạt, đèn bàn hay đồ dùng không còn dùng đến để tích lũy điểm uy tín!'}
               </p>
               <Link
                 href="/items/new"
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white font-bold text-xs hover:bg-[#0A3F34]"
               >
-                + Đăng món đồ đầu tiên
+                + Đăng món đồ mới
               </Link>
             </div>
           )}

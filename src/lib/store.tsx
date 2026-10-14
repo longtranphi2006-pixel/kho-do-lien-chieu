@@ -1008,7 +1008,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateItem = (id: string, updates: Partial<Item>) => {
-    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...updates } : item)));
+    setItems((prev) => {
+      const next = prev.map((item) => (item.id === id ? { ...item, ...updates } : item));
+      try {
+        localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
 
     if (isSupabaseConfigured() && supabase) {
       supabase.from('items').update(updates).eq('id', id).then(() => {});
@@ -1016,7 +1022,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteItem = (id: string) => {
-    setItems((prev) => prev.filter((item) => item.id !== id));
+    setItems((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    // Also cancel any ongoing transactions for this deleted item so they don't remain stuck
+    setTransactions((prev) => {
+      const nextTrades = prev.map((t) =>
+        t.item_id === id && t.status !== 'CANCELLED' && t.status !== 'COMPLETED'
+          ? { ...t, status: 'CANCELLED' as TradeStatus }
+          : t
+      );
+      try {
+        localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(nextTrades));
+      } catch {}
+      return nextTrades;
+    });
 
     if (isSupabaseConfigured() && supabase) {
       supabase.from('items').delete().eq('id', id).then(() => {});
@@ -1741,9 +1766,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Rule: "chỉ dc hủy trước bước xác nhận của ng kia"
     // If it's a pending waitlist request (REQUESTED), it can be cancelled freely by either party!
+    // Admin has emergency authority to cancel any trade reported for violations!
     const isWaitlistRequest = trans.status === 'REQUESTED';
+    const isAdmin = currentUser?.role === 'admin';
 
-    if (!isWaitlistRequest) {
+    if (!isAdmin && !isWaitlistRequest) {
       const otherAlreadyConfirmed = isCallerGiver
         ? Boolean(trans.receiver_confirmed)
         : isCallerReceiver
@@ -1763,9 +1790,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetItem = getItemById(trans.item_id) || items.find((i) => i.id === trans.item_id);
 
     // 1. Update transaction status to CANCELLED
-    setTransactions((prev) =>
-      prev.map((t) => (t.id === transactionId ? { ...t, status: 'CANCELLED' as TradeStatus } : t))
-    );
+    setTransactions((prev) => {
+      const next = prev.map((t) => (t.id === transactionId ? { ...t, status: 'CANCELLED' as TradeStatus } : t));
+      try {
+        localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
 
     // 2. Check if any other transactions for this item are still ACCEPTED or HANDED_OVER
     const hasOtherActiveTrade = transactions.some(

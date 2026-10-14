@@ -1385,10 +1385,14 @@ function AdminDashboardPageContent() {
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        if (confirm(`Bạn có chắc chắn muốn xóa vĩnh viễn bài đăng ${report.target_id}?`)) {
-                                          deleteItem(report.target_id);
-                                          resolveReport(report.id, 'RESOLVE', 'Admin đã xóa vĩnh viễn bài viết vi phạm.');
-                                          setReportActionMsg(`Đã xóa vĩnh viễn bài đăng vi phạm.`);
+                                        if (confirm(`Bạn có chắc chắn muốn xóa vĩnh viễn bài đăng vi phạm này (${report.target_id})?`)) {
+                                          try {
+                                            deleteItem(report.target_id);
+                                            resolveReport(report.id, 'RESOLVE', 'Admin đã xóa vĩnh viễn bài viết vi phạm.');
+                                            setReportActionMsg(`Đã xóa vĩnh viễn bài đăng vi phạm.`);
+                                          } catch (err: any) {
+                                            alert('Lỗi khi xóa bài: ' + (err?.message || 'Không thể thực hiện'));
+                                          }
                                         }
                                       }}
                                       className="px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
@@ -1440,21 +1444,24 @@ function AdminDashboardPageContent() {
                                       <ExternalLink className="w-3.5 h-3.5" /> Vào phòng giao dịch
                                     </Link>
 
-                                    {report.target_type === 'TRADE' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          if (confirm(`Bạn có chắc muốn hủy giao dịch này do vi phạm quy chế?`)) {
-                                            cancelTrade(report.target_id, 'Hủy bởi Admin do vi phạm quy tắc cộng đồng');
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (confirm(`Bạn có chắc muốn hủy giao dịch này do vi phạm quy chế?`)) {
+                                          try {
+                                            const tradeIdToCancel = (report.target_type === 'TRADE' ? report.target_id : report.target_id.split('-')[0]) || report.target_id;
+                                            await cancelTrade(tradeIdToCancel, 'Hủy bởi Admin do vi phạm quy tắc cộng đồng');
                                             resolveReport(report.id, 'RESOLVE', 'Admin đã can thiệp hủy phiên giao dịch.');
                                             setReportActionMsg('Đã hủy phiên giao dịch vi phạm.');
+                                          } catch (err: any) {
+                                            alert('Lỗi khi hủy giao dịch: ' + (err?.message || 'Không tìm thấy phiên giao dịch để hủy'));
                                           }
-                                        }}
-                                        className="px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
-                                      >
-                                        <Ban className="w-3.5 h-3.5" /> Hủy giao dịch này
-                                      </button>
-                                    )}
+                                        }
+                                      }}
+                                      className="px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Ban className="w-3.5 h-3.5" /> Hủy giao dịch này
+                                    </button>
                                   </div>
                                 )}
                               </div>
@@ -1489,25 +1496,27 @@ function AdminDashboardPageContent() {
                           </>
                         ) : (
                           /* Report Already Resolved or Dismissed - Lock all action buttons per rule */
-                          <div className="h-full flex flex-col justify-center items-center text-center p-4 rounded-lg bg-white border border-slate-200">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
+                          <div className="h-full flex flex-col justify-center items-center text-center p-5 rounded-2xl bg-white border border-slate-200 space-y-2.5">
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
                               report.status === 'RESOLVED' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
                             }`}>
-                              {report.status === 'RESOLVED' ? <Check className="w-5 h-5" /> : <ShieldCheck className="w-5 h-5" />}
+                              {report.status === 'RESOLVED' ? <Check className="w-6 h-6 stroke-[3]" /> : <ShieldCheck className="w-6 h-6" />}
                             </div>
-                            <h4 className="text-xs font-bold text-slate-900 mb-1">
-                              {report.status === 'RESOLVED' ? 'Báo cáo đã được xử lý xong' : 'Báo cáo đã được bác bỏ'}
-                            </h4>
-                            <p className="text-[11px] text-slate-500 max-w-xs mb-3">
-                              Hồ sơ này đã hoàn tất đóng dữ liệu. Mọi biện pháp can thiệp (ẩn, xóa, khóa) đã bị khóa để bảo toàn tính minh bạch.
-                            </p>
+                            <div>
+                              <h4 className="text-sm font-extrabold text-slate-900">
+                                {report.status === 'RESOLVED' ? 'Vi phạm đã được xử lý' : 'Báo cáo đã được bác bỏ'}
+                              </h4>
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                Hồ sơ này đã hoàn tất đóng. Mọi biện pháp can thiệp (ẩn, xóa, hủy) đã bị khóa.
+                              </p>
+                            </div>
                             {report.admin_notes && (
-                              <div className="text-[11px] bg-slate-50 border border-slate-200 rounded-md p-2 text-slate-700 w-full text-left">
-                                <span className="font-semibold text-slate-900">Ghi chú của Admin: </span>
+                              <div className="text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-700 w-full text-left">
+                                <span className="font-bold text-slate-900">Ghi chú của Admin: </span>
                                 {report.admin_notes}
                               </div>
                             )}
-                            <div className="mt-2 text-[10px] text-slate-400">
+                            <div className="text-[10px] text-slate-400">
                               Xử lý lúc: {new Date(report.resolved_at || report.created_at).toLocaleString('vi-VN')}
                             </div>
                           </div>
