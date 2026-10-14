@@ -1280,15 +1280,25 @@ function AdminDashboardPageContent() {
             <div className="space-y-4">
               {filteredReports.map((report) => {
                 // Robust lookup of associated trade (for TRADE, MESSAGE, or ITEM report)
+                const tradeIdFromTitle = report.target_title?.match(/#(tr-\d+)/)?.[1];
                 const targetTrade = transactions.find((t) => {
                   if (report.target_type === 'TRADE' && t.id === report.target_id) return true;
                   if (t.id === report.target_id) return true;
+                  if (tradeIdFromTitle && t.id === tradeIdFromTitle) return true;
+                  if (t.item_id === report.target_id) return true;
                   if (report.target_type === 'MESSAGE' && (t.note?.includes(report.target_id) || report.target_title?.includes(t.id))) return true;
                   if (report.target_title && report.target_title.includes(t.id)) return true;
                   return false;
                 });
                 const directItem = items.find((i) => i.id === report.target_id);
                 const resolvedTargetItem = directItem || (targetTrade ? items.find((i) => i.id === targetTrade.item_id) : undefined);
+                const actualTradeId = (report.target_type === 'TRADE' ? report.target_id : undefined) || tradeIdFromTitle || targetTrade?.id;
+                const currentTrade = actualTradeId ? (transactions.find((t) => t.id === actualTradeId) || targetTrade) : null;
+                const actualItemId = resolvedTargetItem?.id || currentTrade?.item_id || targetTrade?.item_id || (report.target_type === 'ITEM' ? report.target_id : undefined);
+                const itm = actualItemId ? (items.find((i) => i.id === actualItemId) || resolvedTargetItem) : null;
+                const isItemHidden = itm?.status === 'HIDDEN';
+                const isTradeCancelled = currentTrade ? currentTrade.status === 'CANCELLED' : false;
+
                 const targetUser = allUsers.find(
                   (u) =>
                     u.id === report.target_user_id ||
@@ -1429,18 +1439,18 @@ function AdminDashboardPageContent() {
                                       )}
 
                                       {(() => {
-                                        const actualItemId = resolvedTargetItem?.id || targetTrade?.item_id || (report.target_type === 'ITEM' ? report.target_id : undefined);
-                                        const itm = actualItemId ? (items.find((i) => i.id === actualItemId) || resolvedTargetItem) : null;
-                                        const isHidden = itm?.status === 'HIDDEN';
-
                                         if (!actualItemId) return null;
 
-                                        return isHidden ? (
+                                        return isItemHidden ? (
                                           <button
                                             type="button"
-                                            onClick={() => {
-                                              adminRestoreItem(actualItemId);
-                                              setReportActionMsg(`Đã mở lại sản phẩm "${itm?.title || actualItemId}" lên kho đồ.`);
+                                            onClick={async () => {
+                                              try {
+                                                await adminRestoreItem(actualItemId);
+                                                setReportActionMsg(`Đã mở lại sản phẩm "${itm?.title || actualItemId}" lên kho đồ.`);
+                                              } catch (err: any) {
+                                                alert('Lỗi: ' + (err?.message || 'Không thể mở lại'));
+                                              }
                                             }}
                                             className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
                                             title="Mở đóng băng để sản phẩm quay lại kho đồ"
@@ -1450,9 +1460,13 @@ function AdminDashboardPageContent() {
                                         ) : (
                                           <button
                                             type="button"
-                                            onClick={() => {
-                                              adminHideItem(actualItemId);
-                                              setReportActionMsg(`Đã đóng băng tạm khóa món đồ "${itm?.title || actualItemId}".`);
+                                            onClick={async () => {
+                                              try {
+                                                await adminHideItem(actualItemId);
+                                                setReportActionMsg(`Đã đóng băng tạm khóa món đồ "${itm?.title || actualItemId}".`);
+                                              } catch (err: any) {
+                                                alert('Lỗi: ' + (err?.message || 'Không thể đóng băng'));
+                                              }
                                             }}
                                             className="px-2.5 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
                                             title="Đóng băng món đồ này khỏi kho đồ"
@@ -1464,16 +1478,16 @@ function AdminDashboardPageContent() {
 
                                       <button
                                         type="button"
-                                        onClick={() => {
-                                          const itemId = resolvedTargetItem?.id || targetTrade?.item_id || (report.target_type === 'ITEM' ? report.target_id : undefined);
-                                          if (!itemId) {
+                                        onClick={async () => {
+                                          if (!actualItemId) {
                                             alert('Không tìm thấy mã món đồ để xóa.');
                                             return;
                                           }
-                                          if (confirm(`Bạn có chắc chắn muốn xóa hoàn toàn bài đăng này khỏi kho đồ? Món đồ sẽ biến mất vĩnh viễn khỏi toàn bộ hệ thống.`)) {
+                                          const itemTitle = itm?.title || actualItemId;
+                                          if (confirm(`Bạn có chắc chắn muốn xóa hoàn toàn món đồ "${itemTitle}" khỏi kho đồ? Món đồ sẽ biến mất vĩnh viễn khỏi toàn bộ hệ thống.`)) {
                                             try {
-                                              deleteItem(itemId);
-                                              setReportActionMsg(`Đã xóa hoàn toàn bài đăng khỏi kho đồ.`);
+                                              await deleteItem(actualItemId);
+                                              setReportActionMsg(`Đã xóa hoàn toàn món đồ "${itemTitle}" khỏi kho đồ.`);
                                             } catch (err: any) {
                                               alert('Lỗi khi xóa bài: ' + (err?.message || 'Không thể thực hiện'));
                                             }
@@ -1489,17 +1503,16 @@ function AdminDashboardPageContent() {
                                 )}
 
                                 {/* Actions for Trade */}
-                                {(report.target_type === 'TRADE' || report.target_type === 'MESSAGE' || targetTrade) && (
+                                {(actualTradeId || report.target_type === 'TRADE' || report.target_type === 'MESSAGE' || targetTrade) && (
                                   <div className="space-y-1.5 pb-2.5 border-b border-slate-200/80">
                                     <div className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
                                       <Repeat className="w-3 h-3 text-[#0F5B4B]" /> Phiên giao dịch liên quan:
                                     </div>
                                     <div className="flex flex-wrap gap-1.5">
                                       {(() => {
-                                        const actualTradeId = targetTrade?.id || (report.target_type === 'TRADE' ? report.target_id : undefined);
                                         if (!actualTradeId) return null;
 
-                                        const isCancelled = targetTrade ? targetTrade.status === 'CANCELLED' : false;
+                                        const isCancelled = isTradeCancelled;
 
                                         return (
                                           <>

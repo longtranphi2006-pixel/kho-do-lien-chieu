@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAppStore } from '@/lib/store';
-import { TradeStatus } from '@/types';
+import { TradeStatus, Item } from '@/types';
 import { WarningBanner } from '@/components/common/WarningBanner';
 import {
   CheckCircle2,
@@ -57,25 +57,100 @@ function TradeStepperContent() {
 
   const storeTransaction = getTransactionById(tradeId);
   const [directTransaction, setDirectTransaction] = useState<Transaction | null>(null);
+  const [directItem, setDirectItem] = useState<Item | null | undefined>(undefined);
   const [isLoadingDirect, setIsLoadingDirect] = useState(!storeTransaction);
   const [syncTrigger, setSyncTrigger] = useState(0);
 
+  const fetchDirect = async () => {
+    if (!isSupabaseConfigured() || !supabase) {
+      setIsLoadingDirect(false);
+      return;
+    }
+    try {
+      const { data: tData } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('id', tradeId)
+        .maybeSingle();
+
+      if (tData) {
+        const [itemRes, giverRes, receiverRes] = await Promise.all([
+          supabase.from('items').select('*').eq('id', tData.item_id).maybeSingle(),
+          supabase.from('profiles').select('*').eq('id', tData.giver_id).maybeSingle(),
+          supabase.from('profiles').select('*').eq('id', tData.receiver_id).maybeSingle(),
+        ]);
+
+        let giver = giverRes.data || undefined;
+        if ((!giver || giver.full_name === 'Thành viên Liên Chiểu') && currentUser?.id === tData.giver_id) {
+          giver = currentUser;
+        }
+        let receiver = receiverRes.data || undefined;
+        if ((!receiver || receiver.full_name === 'Thành viên Liên Chiểu') && currentUser?.id === tData.receiver_id) {
+          receiver = currentUser;
+        }
+
+        const fullTx: Transaction = {
+          ...tData,
+          item: itemRes.data || undefined,
+          giver,
+          receiver,
+        };
+        setDirectTransaction(fullTx);
+        setDirectItem(itemRes.data || null);
+      } else {
+        // Trade not in DB
+        setDirectItem(null);
+      }
+    } catch (err) {
+      console.warn('Direct transaction fetch error:', err);
+    } finally {
+      setIsLoadingDirect(false);
+    }
+  };
+
   // Cross-tab and realtime synchronization
   useEffect(() => {
+    let bc: BroadcastChannel | null = null;
     const handleSync = () => {
       setSyncTrigger((k) => k + 1);
     };
+
+    try {
+      bc = new BroadcastChannel('kdlc_cross_tab_channel');
+      bc.onmessage = () => {
+        handleSync();
+      };
+    } catch {}
+
     window.addEventListener('kdlc-trades-updated', handleSync);
     window.addEventListener('kdlc-items-updated', handleSync);
     window.addEventListener('storage', handleSync);
     window.addEventListener('focus', handleSync);
+
+    // Initial fetch
+    fetchDirect();
+
+    // Fast polling fallback (every 2.5s) to guarantee real-time response for both giver and receiver
+    const pollTimer = setInterval(() => {
+      fetchDirect();
+    }, 2500);
+
     return () => {
+      if (bc) bc.close();
       window.removeEventListener('kdlc-trades-updated', handleSync);
       window.removeEventListener('kdlc-items-updated', handleSync);
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('focus', handleSync);
+      clearInterval(pollTimer);
     };
-  }, []);
+  }, [tradeId]);
+
+  // Re-fetch on syncTrigger
+  useEffect(() => {
+    if (syncTrigger > 0) {
+      fetchDirect();
+    }
+  }, [syncTrigger]);
 
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -116,59 +191,8 @@ function TradeStepperContent() {
     setReportModalOpen(true);
   };
 
-  // Direct Supabase fallback fetch if transaction not found in in-memory store, or when sync triggered
-  useEffect(() => {
-    let isMounted = true;
-    const fetchDirect = async () => {
-      if (!isSupabaseConfigured() || !supabase) {
-        if (isMounted) setIsLoadingDirect(false);
-        return;
-      }
-      try {
-        const { data: tData } = await supabase
-          .from('transactions')
-          .select('*')
-          .eq('id', tradeId)
-          .maybeSingle();
-
-        if (tData && isMounted) {
-          const [itemRes, giverRes, receiverRes] = await Promise.all([
-            supabase.from('items').select('*').eq('id', tData.item_id).maybeSingle(),
-            supabase.from('profiles').select('*').eq('id', tData.giver_id).maybeSingle(),
-            supabase.from('profiles').select('*').eq('id', tData.receiver_id).maybeSingle(),
-          ]);
-
-          let giver = giverRes.data || undefined;
-          if ((!giver || giver.full_name === 'Thành viên Liên Chiểu') && currentUser?.id === tData.giver_id) {
-            giver = currentUser;
-          }
-          let receiver = receiverRes.data || undefined;
-          if ((!receiver || receiver.full_name === 'Thành viên Liên Chiểu') && currentUser?.id === tData.receiver_id) {
-            receiver = currentUser;
-          }
-
-          const fullTx: Transaction = {
-            ...tData,
-            item: itemRes.data || undefined,
-            giver,
-            receiver,
-          };
-          setDirectTransaction(fullTx);
-        }
-      } catch (err) {
-        console.warn('Direct transaction fetch error:', err);
-      } finally {
-        if (isMounted) setIsLoadingDirect(false);
-      }
-    };
-
-    fetchDirect();
-    return () => {
-      isMounted = false;
-    };
-  }, [tradeId, syncTrigger, currentUser]);
-
-  const transaction = storeTransaction || directTransaction;
+  // Priority: if directTransaction is fetched, it reflects the latest cloud status. Fallback to storeTransaction.
+  const transaction = directTransaction || storeTransaction;
 
   const myUserIds = React.useMemo(() => {
     const ids = new Set<string>();
@@ -184,17 +208,23 @@ function TradeStepperContent() {
     return ids;
   }, [currentUser, allUsers]);
 
-  const rawItem = (transaction?.item_id ? getItemById(transaction.item_id) : undefined) || transaction?.item;
+  const storeItem = transaction?.item_id ? getItemById(transaction.item_id) : undefined;
+  // If directItem was explicitly resolved from Supabase (including null if deleted from DB!), use directItem
+  const rawItem = directItem !== undefined ? (directItem || undefined) : (storeItem || transaction?.item);
+
   const isItemDeleted = Boolean(
-    !rawItem ||
+    (!rawItem && (directItem === null || directTransaction !== null)) ||
+    (directItem === null) ||
     (transaction && deletedItemIds.has(transaction.item_id)) ||
     (rawItem && deletedItemIds.has(rawItem.id))
   );
+
   const item = rawItem;
   const isFrozen = Boolean(item && item.status === 'HIDDEN');
   const giver = transaction?.giver;
   const receiver = transaction?.receiver;
   const status = transaction?.status || 'REQUESTED';
+  const isCancelled = status === 'CANCELLED';
 
   // Determine effective perspective (Giver vs Receiver)
   const isActuallyGiver = transaction ? myUserIds.has(transaction.giver_id) : false;
@@ -222,16 +252,16 @@ function TradeStepperContent() {
   };
 
   const bothConfirmed = Boolean(transaction?.giver_confirmed && transaction?.receiver_confirmed);
-  const isCompleted = status === 'COMPLETED' || bothConfirmed;
+  const isCompleted = status === 'COMPLETED' || (bothConfirmed && !isCancelled && !isFrozen && !isItemDeleted);
   const currentStepIndex = isCompleted ? 3 : getStepIndex(status);
 
   // Auto-advance trade to COMPLETED if both parties have confirmed
   React.useEffect(() => {
-    if (!transaction) return;
+    if (!transaction || isCancelled || isFrozen || isItemDeleted) return;
     if (bothConfirmed && status !== 'COMPLETED') {
       advanceTradeStatus(transaction.id, 'COMPLETED');
     }
-  }, [bothConfirmed, status, transaction?.id, advanceTradeStatus]);
+  }, [bothConfirmed, status, transaction?.id, isCancelled, isFrozen, isItemDeleted, advanceTradeStatus]);
 
   // Parse chat messages and note from transaction.note with triple failsafe
   const { chatMessages, displayNote } = React.useMemo<{ chatMessages: TradeMessage[]; displayNote: string }>(() => {
@@ -345,8 +375,6 @@ function TradeStepperContent() {
     status !== 'COMPLETED' &&
     status !== 'CANCELLED' &&
     !otherAlreadyConfirmed;
-
-  const isCancelled = status === 'CANCELLED';
 
   const handleSendChatMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();

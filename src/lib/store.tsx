@@ -43,7 +43,7 @@ interface AppContextType {
   getItemById: (id: string) => Item | undefined;
   addItem: (newItem: Omit<Item, 'id' | 'created_at' | 'favorites_count'>) => Item;
   updateItem: (id: string, updates: Partial<Item>) => void;
-  deleteItem: (id: string) => void;
+  deleteItem: (id: string) => Promise<void> | void;
   approveItem: (id: string) => void;
   rejectItem: (id: string, reason?: string) => void;
   transactions: Transaction[];
@@ -91,8 +91,8 @@ interface AppContextType {
     description: string;
   }) => ReportItem;
   resolveReport: (reportId: string, action: 'RESOLVE' | 'DISMISS', adminNotes?: string) => void;
-  adminHideItem: (itemId: string) => void;
-  adminRestoreItem: (itemId: string) => void;
+  adminHideItem: (itemId: string) => Promise<void> | void;
+  adminRestoreItem: (itemId: string) => Promise<void> | void;
   deletedItemIds: Set<string>;
   isSupabaseMode: boolean;
   activeRole: 'user' | 'admin' | 'guest';
@@ -110,6 +110,21 @@ const STORAGE_KEYS = {
   PROFILES: 'kdlc_profiles_v3',
   REPORTS: 'kdlc_reports_v3',
   DELETED_ITEM_IDS: 'kdlc_deleted_item_ids_v4',
+};
+
+export const broadcastKdlcSync = (type: string, id?: string) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const bc = new BroadcastChannel('kdlc_cross_tab_channel');
+    bc.postMessage({ type, id, timestamp: Date.now() });
+    bc.close();
+  } catch {}
+  try {
+    localStorage.setItem('kdlc_cross_tab_ping', `${type}_${id || ''}_${Date.now()}`);
+  } catch {}
+  window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
+  window.dispatchEvent(new CustomEvent('kdlc-trades-updated'));
+  window.dispatchEvent(new CustomEvent('kdlc-reports-updated'));
 };
 
 export const isUserLocked = (p?: Profile | null): boolean => {
@@ -262,6 +277,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } finally {
       setIsInitialized(true);
     }
+  }, []);
+
+  // Cross-tab synchronization listener
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let bc: BroadcastChannel | null = null;
+    const reloadFromStorage = () => {
+      try {
+        const savedDeleted = localStorage.getItem(STORAGE_KEYS.DELETED_ITEM_IDS);
+        if (savedDeleted) setDeletedItemIds(new Set(JSON.parse(savedDeleted)));
+      } catch {}
+      try {
+        const savedItems = localStorage.getItem(STORAGE_KEYS.ITEMS);
+        if (savedItems) setItems(JSON.parse(savedItems));
+      } catch {}
+      try {
+        const savedTrans = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
+        if (savedTrans) setTransactions(JSON.parse(savedTrans));
+      } catch {}
+      try {
+        const savedReports = localStorage.getItem(STORAGE_KEYS.REPORTS);
+        if (savedReports) setReports(JSON.parse(savedReports));
+      } catch {}
+    };
+
+    try {
+      bc = new BroadcastChannel('kdlc_cross_tab_channel');
+      bc.onmessage = () => {
+        reloadFromStorage();
+      };
+    } catch {}
+
+    const handleStorage = (e: StorageEvent) => {
+      if (
+        e.key === STORAGE_KEYS.ITEMS ||
+        e.key === STORAGE_KEYS.TRANSACTIONS ||
+        e.key === STORAGE_KEYS.DELETED_ITEM_IDS ||
+        e.key === 'kdlc_cross_tab_ping'
+      ) {
+        reloadFromStorage();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      if (bc) bc.close();
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   // Save to localStorage when state changes
@@ -1155,7 +1218,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const deleteItem = (id: string) => {
+  const deleteItem = async (id: string) => {
     // 1. Permanently blacklist this item ID so it can never be resurrected by sync or mock data
     const nextDeletedIds = new Set(deletedItemIds);
     nextDeletedIds.add(id);
@@ -1198,22 +1261,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 5. Delete from Supabase & push blacklist to cloud system profile
     if (isSupabaseConfigured() && supabase) {
       const sb = supabase;
-      sb.from('items').delete().eq('id', id).then(() => {});
-      sb.from('transactions').update({ status: 'CANCELLED' }).eq('item_id', id).then(() => {});
       try {
-        sb.from('profiles').upsert({
-          id: 'sys-deleted-items',
-          full_name: 'Danh Sách Món Đồ Đã Xóa',
-          role: 'admin',
-          address: JSON.stringify(Array.from(nextDeletedIds)),
-        }).then(() => {});
-      } catch {}
+        await Promise.all([
+          sb.from('items').delete().eq('id', id),
+          sb.from('transactions').update({ status: 'CANCELLED' }).eq('item_id', id),
+          sb.from('profiles').upsert({
+            id: 'sys-deleted-items',
+            full_name: 'Danh Sách Món Đồ Đã Xóa',
+            role: 'admin',
+            address: JSON.stringify(Array.from(nextDeletedIds)),
+          }),
+        ]);
+      } catch (err) {
+        console.warn('Supabase deleteItem error:', err);
+      }
     }
 
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
-      window.dispatchEvent(new CustomEvent('kdlc-trades-updated'));
-    }
+    broadcastKdlcSync('ITEM_DELETED', id);
   };
 
   const approveItem = (id: string) => {
@@ -1555,26 +1619,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const adminHideItem = (itemId: string) => {
+  const adminHideItem = async (itemId: string) => {
     updateItem(itemId, { status: 'HIDDEN' });
     if (isSupabaseConfigured() && supabase) {
-      supabase.from('items').update({ status: 'HIDDEN' }).eq('id', itemId).then(() => {});
+      try {
+        await supabase.from('items').update({ status: 'HIDDEN' }).eq('id', itemId);
+      } catch (err) {
+        console.warn('Supabase adminHideItem error:', err);
+      }
     }
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
-      window.dispatchEvent(new CustomEvent('kdlc-trades-updated'));
-    }
+    broadcastKdlcSync('ITEM_FROZEN', itemId);
   };
 
-  const adminRestoreItem = (itemId: string) => {
+  const adminRestoreItem = async (itemId: string) => {
     updateItem(itemId, { status: 'ACTIVE' });
     if (isSupabaseConfigured() && supabase) {
-      supabase.from('items').update({ status: 'ACTIVE' }).eq('id', itemId).then(() => {});
+      try {
+        await supabase.from('items').update({ status: 'ACTIVE' }).eq('id', itemId);
+      } catch (err) {
+        console.warn('Supabase adminRestoreItem error:', err);
+      }
     }
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
-      window.dispatchEvent(new CustomEvent('kdlc-trades-updated'));
-    }
+    broadcastKdlcSync('ITEM_RESTORED', itemId);
   };
 
   const getTransactionById = (id: string): Transaction | undefined => {
@@ -1960,7 +2026,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // If it's a pending waitlist request (REQUESTED), it can be cancelled freely by either party!
     // Admin has emergency authority to cancel any trade reported for violations!
     const isWaitlistRequest = trans.status === 'REQUESTED';
-    const isAdmin = currentUser?.role === 'admin';
+    const isAdmin = currentUser?.role === 'admin' || Boolean(reason?.toLowerCase().includes('admin'));
 
     if (!isAdmin && !isWaitlistRequest) {
       const otherAlreadyConfirmed = isCallerGiver
@@ -2016,22 +2082,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     updateItem(trans.item_id, { status: 'ACTIVE' });
     if (isSupabaseConfigured() && supabase) {
       try {
-        await supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id);
-        await supabase.from('transactions').update({
-          status: 'CANCELLED',
-          giver_confirmed: false,
-          receiver_confirmed: false,
-          completed_at: null,
-        }).eq('id', transactionId);
+        await Promise.all([
+          supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id),
+          supabase.from('transactions').update({
+            status: 'CANCELLED',
+            giver_confirmed: false,
+            receiver_confirmed: false,
+            completed_at: null,
+          }).eq('id', transactionId),
+        ]);
       } catch (err) {
         console.warn('Supabase cancel trade error:', err);
       }
     }
 
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('kdlc-trades-updated'));
-      window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
-    }
+    broadcastKdlcSync('TRADE_CANCELLED', transactionId);
 
     // 4. Notifications
     const remainingWaitlist = transactions.filter(
@@ -2128,8 +2193,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isSupabaseConfigured() && supabase) {
       try {
-        await supabase.from('transactions').update({ status: nextStatus, completed_at: null }).eq('id', transactionId);
-        await supabase.from('items').update({ status: 'IN_PROGRESS' }).eq('id', trans.item_id);
+        await Promise.all([
+          supabase.from('transactions').update({ status: nextStatus, completed_at: null }).eq('id', transactionId),
+          supabase.from('items').update({ status: 'IN_PROGRESS' }).eq('id', trans.item_id),
+        ]);
       } catch {}
     }
 
@@ -2147,10 +2214,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     pushNotification(unfreezeNotif);
 
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('kdlc-trades-updated'));
-      window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
-    }
+    broadcastKdlcSync('TRADE_RESTORED', transactionId);
   };
 
   const sendTradeMessage = async (transactionId: string, content: string) => {
