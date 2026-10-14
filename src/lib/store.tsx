@@ -1757,6 +1757,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (currentUser && isUserLocked(currentUser)) {
       throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
     }
+    const currentTrans = transactions.find((t) => t.id === transactionId);
+    if (currentTrans?.status === 'CANCELLED') {
+      throw new Error('Giao dịch này đã bị hủy hoặc bị khóa bởi Ban Quản Trị.');
+    }
+    const targetItem = currentTrans ? (getItemById(currentTrans.item_id) || items.find((i) => i.id === currentTrans.item_id)) : null;
+    if (targetItem?.status === 'HIDDEN') {
+      throw new Error('Món đồ đang bị Ban Quản Trị tạm khóa / đóng băng để xác minh vi phạm. Mọi thao tác tạm thời bị khóa!');
+    }
+    if (currentTrans && deletedItemIds.has(currentTrans.item_id)) {
+      throw new Error('Món đồ này đã bị xóa hoàn toàn khỏi hệ thống!');
+    }
     setTransactions((prev) =>
       prev.map((t) => {
         if (t.id !== transactionId) return t;
@@ -1775,9 +1786,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         completed_at: nextStatus === 'COMPLETED' ? new Date().toISOString() : undefined,
       }).eq('id', transactionId).then(() => {});
     }
-
-    const currentTrans = transactions.find((t) => t.id === transactionId);
-    const targetItem = currentTrans ? (getItemById(currentTrans.item_id) || items.find((i) => i.id === currentTrans.item_id)) : null;
 
     if (nextStatus === 'ACCEPTED' && currentTrans) {
       // Mark item as IN_PROGRESS when owner accepts a requester
@@ -1851,6 +1859,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const confirmTradeHandover = async (transactionId: string, role: 'giver' | 'receiver') => {
     if (currentUser && isUserLocked(currentUser)) {
       throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
+    }
+    const currentTrans = transactions.find((t) => t.id === transactionId);
+    if (currentTrans?.status === 'CANCELLED') {
+      throw new Error('Giao dịch này đã bị hủy hoặc bị khóa bởi Ban Quản Trị.');
+    }
+    const targetItem = currentTrans ? (getItemById(currentTrans.item_id) || items.find((i) => i.id === currentTrans.item_id)) : null;
+    if (targetItem?.status === 'HIDDEN') {
+      throw new Error('Món đồ đang bị Ban Quản Trị tạm khóa / đóng băng để xác minh vi phạm. Mọi thao tác bàn giao tạm thời bị khóa!');
+    }
+    if (currentTrans && deletedItemIds.has(currentTrans.item_id)) {
+      throw new Error('Món đồ này đã bị xóa hoàn toàn khỏi hệ thống!');
     }
     let completedTrans: Transaction | null = null;
     const isGiver = role === 'giver';

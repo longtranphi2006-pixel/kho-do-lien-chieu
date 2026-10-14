@@ -1281,7 +1281,7 @@ function AdminDashboardPageContent() {
               {filteredReports.map((report) => {
                 // Robust lookup of associated trade (for TRADE, MESSAGE, or ITEM report)
                 const tradeIdFromTitle = report.target_title?.match(/#(tr-\d+)/)?.[1];
-                const targetTrade = transactions.find((t) => {
+                const candidateTrades = transactions.filter((t) => {
                   if (report.target_type === 'TRADE' && t.id === report.target_id) return true;
                   if (t.id === report.target_id) return true;
                   if (tradeIdFromTitle && t.id === tradeIdFromTitle) return true;
@@ -1290,10 +1290,14 @@ function AdminDashboardPageContent() {
                   if (report.target_title && report.target_title.includes(t.id)) return true;
                   return false;
                 });
+                // Prioritize active trades (not cancelled, not completed), then sort newest first
+                const targetTrade = candidateTrades.find((t) => t.status !== 'CANCELLED' && t.status !== 'COMPLETED')
+                  || [...candidateTrades].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
                 const directItem = items.find((i) => i.id === report.target_id);
                 const resolvedTargetItem = directItem || (targetTrade ? items.find((i) => i.id === targetTrade.item_id) : undefined);
                 const actualTradeId = (report.target_type === 'TRADE' ? report.target_id : undefined) || tradeIdFromTitle || targetTrade?.id;
-                const currentTrade = actualTradeId ? (transactions.find((t) => t.id === actualTradeId) || targetTrade) : null;
+                const currentTrade = actualTradeId ? (transactions.find((t) => t.id === actualTradeId) || targetTrade) : targetTrade;
                 const actualItemId = resolvedTargetItem?.id || currentTrade?.item_id || targetTrade?.item_id || (report.target_type === 'ITEM' ? report.target_id : undefined);
                 const itm = actualItemId ? (items.find((i) => i.id === actualItemId) || resolvedTargetItem) : null;
                 const isItemHidden = itm?.status === 'HIDDEN';

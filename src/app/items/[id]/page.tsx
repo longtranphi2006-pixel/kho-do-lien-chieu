@@ -64,6 +64,7 @@ function ItemDetailContent() {
     favorites,
     toggleFavorite,
     isUserLocked,
+    deletedItemIds,
   } = useAppStore();
   const item = getItemById(itemId);
 
@@ -116,16 +117,21 @@ function ItemDetailContent() {
     setReportModalOpen(true);
   };
 
-  if (!item) {
+  if (deletedItemIds?.has(itemId) || !item) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-16 text-center space-y-4">
-        <h2 className="text-2xl font-bold text-slate-800">Không tìm thấy món đồ</h2>
-        <p className="text-slate-500 text-sm">Món đồ này có thể đã được trao tặng hoặc gỡ bỏ.</p>
+        <div className="w-16 h-16 rounded-full bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center mx-auto shadow-sm">
+          <Trash2 className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">Món đồ không tồn tại hoặc đã bị xóa</h2>
+        <p className="text-slate-500 text-xs sm:text-sm max-w-md mx-auto leading-relaxed">
+          Món đồ này đã bị Ban Quản Trị xóa vĩnh viễn khỏi toàn bộ hệ thống hoặc không còn tồn tại trên kho đồ.
+        </p>
         <Link
           href="/items"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white font-semibold text-sm"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white font-semibold text-sm hover:bg-[#0A3F34] transition-all"
         >
-          <ArrowLeft className="w-4 h-4" /> Quay lại Kho đồ
+          <ArrowLeft className="w-4 h-4" /> Khám phá Kho đồ khác
         </Link>
       </div>
     );
@@ -291,20 +297,20 @@ function ItemDetailContent() {
     }
   };
 
-  // If item is hidden and current user is NOT the owner or admin
-  if (item.status === 'HIDDEN' && !isDonorCurrent && currentUser?.role !== 'admin') {
+  // If item is hidden and current user is NOT the owner or participant or admin
+  if (item.status === 'HIDDEN' && !isDonorCurrent && !isReceiverCurrent && currentUser?.role !== 'admin') {
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-center space-y-4">
-        <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
-          <EyeOff className="w-8 h-8" />
+        <div className="w-16 h-16 rounded-full bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto shadow-sm">
+          <Lock className="w-8 h-8" />
         </div>
-        <h2 className="text-xl sm:text-2xl font-bold text-slate-800">Món đồ tạm thời bị ẩn</h2>
-        <p className="text-slate-500 text-sm">
-          Chủ món đồ đã tạm thời ẩn mục này khỏi danh sách công khai. Vui lòng quay lại sau!
+        <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">Món đồ đang bị tạm khóa</h2>
+        <p className="text-slate-500 text-xs sm:text-sm max-w-sm mx-auto leading-relaxed">
+          Món đồ này đang được Ban Quản Trị tạm khóa / đóng băng để xác minh thông tin vi phạm. Vui lòng quay lại sau!
         </p>
         <Link
           href="/items"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white font-bold text-sm"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white font-bold text-sm hover:bg-[#0A3F34] transition-all"
         >
           <ArrowLeft className="w-4 h-4" /> Quay lại Kho đồ
         </Link>
@@ -314,6 +320,10 @@ function ItemDetailContent() {
 
   // Owner action: Choose specific person from queue to trade with
   const handleOwnerAccept = (tradeId: string) => {
+    if (item.status === 'HIDDEN') {
+      alert('Món đồ đang bị Ban Quản Trị tạm khóa / đóng băng để kiểm tra vi phạm, không thể chấp nhận yêu cầu!');
+      return;
+    }
     setIsProcessingAction(true);
     try {
       advanceTradeStatus(tradeId, 'ACCEPTED');
@@ -376,6 +386,10 @@ function ItemDetailContent() {
   };
 
   const handleOwnerConfirmHandover = async (tradeId: string) => {
+    if (item.status === 'HIDDEN') {
+      alert('Món đồ đang bị Ban Quản Trị tạm khóa / đóng băng để kiểm tra vi phạm, không thể xác nhận bàn giao!');
+      return;
+    }
     setIsProcessingAction(true);
     try {
       await confirmTradeHandover(tradeId, 'giver');
@@ -383,13 +397,18 @@ function ItemDetailContent() {
       setTimeout(() => {
         setIsProcessingAction(false);
       }, 1500);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      alert(e?.message || 'Có lỗi xảy ra khi xác nhận bàn giao');
       setIsProcessingAction(false);
     }
   };
 
   const handleReceiverConfirmHandover = async (tradeId: string) => {
+    if (item.status === 'HIDDEN') {
+      alert('Món đồ đang bị Ban Quản Trị tạm khóa / đóng băng để kiểm tra vi phạm, không thể xác nhận nhận đồ!');
+      return;
+    }
     setIsProcessingAction(true);
     try {
       await confirmTradeHandover(tradeId, 'receiver');
@@ -397,8 +416,9 @@ function ItemDetailContent() {
       setTimeout(() => {
         setIsProcessingAction(false);
       }, 1500);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      alert(e?.message || 'Có lỗi xảy ra khi xác nhận nhận đồ');
       setIsProcessingAction(false);
     }
   };
@@ -809,8 +829,22 @@ function ItemDetailContent() {
                   )}
                 </div>
 
-                {/* CASE 1: THERE IS AN ONGOING ACTIVE TRADE (ACCEPTED OR HANDED OVER) */}
-                {activeTrade && (activeTrade.status === 'ACCEPTED' || activeTrade.status === 'HANDED_OVER') ? (
+                {/* CASE 1: ITEM IS FROZEN / TEMPORARILY LOCKED BY ADMIN */}
+                {item.status === 'HIDDEN' ? (
+                  <div className="p-4 sm:p-5 rounded-2xl bg-amber-50 border-2 border-amber-300 text-center space-y-2.5">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center mx-auto">
+                      <Lock className="w-5 h-5 stroke-[2.5]" />
+                    </div>
+                    <div className="font-extrabold text-amber-950 text-sm sm:text-base">
+                      🔒 Món đồ đang bị Ban Quản Trị TẠM KHÓA / ĐÓNG BĂNG
+                    </div>
+                    <p className="text-xs text-amber-800 leading-relaxed max-w-md mx-auto">
+                      Món đồ này đang trong diện kiểm tra và xử lý vi phạm của Ban Quản Trị. 
+                      <strong> Mọi thao tác duyệt, bàn giao và nhận đồ tạm thời bị khóa </strong> 
+                      cho đến khi Ban Quản Trị mở lại.
+                    </p>
+                  </div>
+                ) : activeTrade && (activeTrade.status === 'ACCEPTED' || activeTrade.status === 'HANDED_OVER') ? (
                   <div className="space-y-3">
                     <div className="p-3.5 bg-blue-50/90 border border-blue-200 rounded-2xl space-y-2">
                       <div className="flex items-center justify-between">
@@ -1121,6 +1155,20 @@ function ItemDetailContent() {
                         🚚 Xem phòng chờ & Chat
                       </Link>
                     </div>
+                  </div>
+                ) : item.status === 'HIDDEN' ? (
+                  /* REQUESTER SEES FROZEN CALLOUT */
+                  <div className="p-4 rounded-2xl bg-amber-50 border-2 border-amber-300 text-center space-y-2">
+                    <div className="w-9 h-9 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center mx-auto">
+                      <Lock className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                    <div className="font-bold text-amber-950 text-xs sm:text-sm">
+                      🔒 Phiên trao đổi đang bị Ban Quản Trị TẠM KHÓA / ĐÓNG BĂNG
+                    </div>
+                    <p className="text-[11px] text-amber-800 leading-relaxed max-w-sm mx-auto">
+                      Món đồ này đang trong diện kiểm tra và xử lý vi phạm của Ban Quản Trị. 
+                      Thao tác xác nhận nhận đồ tạm thời dừng cho đến khi Ban Quản Trị mở lại.
+                    </p>
                   </div>
                 ) : (myRequest.status === 'ACCEPTED' || myRequest.status === 'HANDED_OVER') ? (
                   /* REQUESTER WAS CHOSEN */

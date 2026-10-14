@@ -19,6 +19,7 @@ import {
   AlertCircle,
   ExternalLink,
   Users,
+  Lock,
 } from 'lucide-react';
 import { TradeStatus } from '@/types';
 
@@ -240,7 +241,7 @@ export default function TradesListPage() {
   }, [transactions, currentUser, myUserIds, allUsers, getItemById]);
 
   const activeTrades = useMemo(
-    () => unifiedTrades.filter((t) => t.status !== 'COMPLETED'),
+    () => unifiedTrades.filter((t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED'),
     [unifiedTrades]
   );
 
@@ -391,6 +392,10 @@ export default function TradesListPage() {
                           className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
                             card.status === 'COMPLETED'
                               ? 'bg-emerald-100 text-emerald-800'
+                              : card.status === 'CANCELLED'
+                              ? 'bg-rose-100 text-rose-800'
+                              : card.item?.status === 'HIDDEN'
+                              ? 'bg-amber-100 text-amber-800'
                               : isPendingSelection
                               ? 'bg-amber-100 text-amber-800'
                               : card.isWaitlist
@@ -402,6 +407,10 @@ export default function TradesListPage() {
                         >
                           {card.status === 'COMPLETED'
                             ? '✓ Hoàn tất'
+                            : card.status === 'CANCELLED'
+                            ? '❌ Giao dịch đã hủy / Khóa'
+                            : card.item?.status === 'HIDDEN'
+                            ? '🔒 Tạm khóa / Đóng băng'
                             : isPendingSelection
                             ? `⏳ Chờ bạn chọn người nhận (${card.totalPendingCount})`
                             : card.isWaitlist
@@ -498,7 +507,21 @@ export default function TradesListPage() {
 
                     {/* Bottom CTA Button */}
                     <div className="pt-2 border-t border-slate-100">
-                      {isPendingSelection ? (
+                      {card.item?.status === 'HIDDEN' ? (
+                        <Link
+                          href={`/trades/${card.activeTradeId}`}
+                          className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all text-center"
+                        >
+                          <Lock className="w-3.5 h-3.5" /> Xem phòng tiến trình (Đang tạm khóa) <ArrowRight className="w-3.5 h-3.5" />
+                        </Link>
+                      ) : card.status === 'CANCELLED' ? (
+                        <Link
+                          href={`/trades/${card.activeTradeId}`}
+                          className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs flex items-center justify-center gap-1.5 transition-all text-center"
+                        >
+                          Xem thông tin giao dịch đã đóng <ArrowRight className="w-3.5 h-3.5" />
+                        </Link>
+                      ) : isPendingSelection ? (
                         <Link
                           href={`/items/${card.itemId}`}
                           className="w-full py-2.5 px-3 rounded-xl bg-[#0F5B4B] hover:bg-[#0A3F34] text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all text-center"
