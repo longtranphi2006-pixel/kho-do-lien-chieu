@@ -116,3 +116,36 @@ export interface KpiStats {
   pending_moderation: number;
   total_completed_trades: number;
 }
+
+export type ReportTargetType = 'ITEM' | 'USER' | 'TRADE' | 'MESSAGE';
+
+export type ReportReason =
+  | 'COMMERCIAL_MONEY'
+  | 'PROHIBITED_SUBSTANCE'
+  | 'VIOLENCE_HARASSMENT'
+  | 'FRAUD_SCAM'
+  | 'OTHER';
+
+export type ReportStatus = 'PENDING' | 'RESOLVED' | 'DISMISSED';
+
+export interface ReportItem {
+  id: string;
+  reporter_id: string;
+  reporter_name?: string;
+  reporter_email?: string;
+  target_type: ReportTargetType;
+  target_id: string;
+  target_title?: string;
+  target_details?: string;
+  target_user_id?: string;
+  target_user_name?: string;
+  reason: ReportReason;
+  reason_text: string;
+  description: string;
+  status: ReportStatus;
+  admin_notes?: string;
+  resolved_at?: string;
+  resolved_by?: string;
+  created_at: string;
+}
+

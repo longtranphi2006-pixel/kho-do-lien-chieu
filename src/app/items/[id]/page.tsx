@@ -31,8 +31,10 @@ import {
   Lock,
   SlidersHorizontal,
   Save,
+  Flag,
 } from 'lucide-react';
-import { ItemCondition, ItemPurpose } from '@/types';
+import { ItemCondition, ItemPurpose, ReportTargetType } from '@/types';
+import { ReportModal } from '@/components/common/ReportModal';
 
 const ITEM_CATEGORIES = [
   'Đồ dùng học tập',
@@ -89,6 +91,29 @@ function ItemDetailContent() {
   const [editLocation, setEditLocation] = useState('');
   const [editImageUrl, setEditImageUrl] = useState('');
   const [isUpdatingItem, setIsUpdatingItem] = useState(false);
+  
+  // Report Modal State
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [reportTargetType, setReportTargetType] = useState<ReportTargetType>('ITEM');
+  const [reportTargetId, setReportTargetId] = useState('');
+  const [reportTargetTitle, setReportTargetTitle] = useState('');
+  const [reportTargetUserId, setReportTargetUserId] = useState<string | undefined>(undefined);
+  const [reportTargetUserName, setReportTargetUserName] = useState<string | undefined>(undefined);
+
+  const handleOpenReport = (
+    type: ReportTargetType,
+    id: string,
+    title: string,
+    userId?: string,
+    userName?: string
+  ) => {
+    setReportTargetType(type);
+    setReportTargetId(id);
+    setReportTargetTitle(title);
+    setReportTargetUserId(userId);
+    setReportTargetUserName(userName);
+    setReportModalOpen(true);
+  };
 
   if (!item) {
     return (
@@ -536,10 +561,53 @@ function ItemDetailContent() {
             message="Kho Đồ Liên Chiểu KHÔNG thu bất kỳ loại phí nào. Tuyệt đối không giao dịch chuyển khoản tiền đặt cọc. Hãy gặp mặt trực tiếp tại các điểm công cộng trong quận Liên Chiểu."
           />
 
+          {/* Item Report Trigger */}
+          <div className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs">
+            <span className="flex items-center gap-1.5 text-slate-600">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#0F5B4B]" />
+              Thấy bài đăng có dấu hiệu vi phạm quy định?
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                handleOpenReport(
+                  'ITEM',
+                  item.id,
+                  item.title,
+                  item.user_id,
+                  donor?.full_name || item.donor_name
+                )
+              }
+              className="text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+            >
+              <Flag className="w-3.5 h-3.5" /> Báo cáo bài đăng này
+            </button>
+          </div>
+
           {/* Donor Profile Card */}
           <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs space-y-3">
-            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Thông tin người trao đồ
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Thông tin người trao đồ
+              </div>
+              {!isDonorCurrent && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleOpenReport(
+                      'USER',
+                      item.user_id,
+                      `Tài khoản: ${donor?.full_name || item.donor_name || 'Người dùng'}`,
+                      item.user_id,
+                      donor?.full_name || item.donor_name
+                    )
+                  }
+                  className="text-[11px] text-slate-400 hover:text-rose-600 flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Báo cáo tài khoản nếu có hành vi gian lận hoặc vi phạm"
+                >
+                  <Flag className="w-3 h-3 text-rose-500" /> Báo cáo tài khoản
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-3.5">
               {(donor?.avatar_url || item.donor_avatar) ? (
@@ -1444,6 +1512,17 @@ function ItemDetailContent() {
           </div>
         </div>
       )}
+
+      {/* Report Modal */}
+      <ReportModal
+        isOpen={reportModalOpen}
+        onClose={() => setReportModalOpen(false)}
+        targetType={reportTargetType}
+        targetId={reportTargetId}
+        targetTitle={reportTargetTitle}
+        targetUserId={reportTargetUserId}
+        targetUserName={reportTargetUserName}
+      />
     </div>
   );
 }

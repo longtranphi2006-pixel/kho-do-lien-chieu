@@ -1,8 +1,27 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Profile, Item, Transaction, Review, NotificationItem, TradeStatus, ItemStatus } from '@/types';
-import { MOCK_PROFILES, MOCK_ITEMS, MOCK_TRANSACTIONS, MOCK_REVIEWS, MOCK_NOTIFICATIONS } from '@/lib/mock-data';
+import {
+  Profile,
+  Item,
+  Transaction,
+  Review,
+  NotificationItem,
+  TradeStatus,
+  ItemStatus,
+  ReportItem,
+  ReportTargetType,
+  ReportReason,
+  ReportStatus,
+} from '@/types';
+import {
+  MOCK_PROFILES,
+  MOCK_ITEMS,
+  MOCK_TRANSACTIONS,
+  MOCK_REVIEWS,
+  MOCK_NOTIFICATIONS,
+  MOCK_REPORTS,
+} from '@/lib/mock-data';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 interface AppContextType {
@@ -51,6 +70,20 @@ interface AppContextType {
   favorites: string[];
   toggleFavorite: (itemId: string) => void;
   toggleLockUser: (userId: string) => void;
+  reports: ReportItem[];
+  submitReport: (params: {
+    targetType: ReportTargetType;
+    targetId: string;
+    targetTitle?: string;
+    targetDetails?: string;
+    targetUserId?: string;
+    targetUserName?: string;
+    reason: ReportReason;
+    description: string;
+  }) => ReportItem;
+  resolveReport: (reportId: string, action: 'RESOLVE' | 'DISMISS', adminNotes?: string) => void;
+  adminHideItem: (itemId: string) => void;
+  adminRestoreItem: (itemId: string) => void;
   isSupabaseMode: boolean;
   activeRole: 'user' | 'admin' | 'guest';
 }
@@ -65,6 +98,7 @@ const STORAGE_KEYS = {
   NOTIFICATIONS: 'kdlc_notifications_v3',
   FAVORITES: 'kdlc_favorites_v3',
   PROFILES: 'kdlc_profiles_v3',
+  REPORTS: 'kdlc_reports_v3',
 };
 
 export const hydrateProfile = (p: Profile): Profile => {
@@ -95,6 +129,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [reviews, setReviews] = useState<Review[]>(MOCK_REVIEWS);
   const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
   const [favorites, setFavorites] = useState<string[]>(['item-01', 'item-04']);
+  const [reports, setReports] = useState<ReportItem[]>(MOCK_REPORTS);
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
 
   // Load persisted state from localStorage on client mount
@@ -143,6 +178,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const savedFavs = localStorage.getItem(STORAGE_KEYS.FAVORITES);
       if (savedFavs) setFavorites(JSON.parse(savedFavs));
+
+      const savedReports = localStorage.getItem(STORAGE_KEYS.REPORTS);
+      if (savedReports) {
+        setReports(JSON.parse(savedReports));
+      }
     } catch (e) {
       console.warn('LocalStorage load error, using default mock data', e);
     } finally {
@@ -161,10 +201,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(STORAGE_KEYS.REVIEWS, JSON.stringify(reviews));
       localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
       localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(favorites));
+      localStorage.setItem(STORAGE_KEYS.REPORTS, JSON.stringify(reports));
     } catch (e) {
       console.warn('LocalStorage save error', e);
     }
-  }, [profiles, currentUserId, items, transactions, reviews, notifications, favorites, isInitialized]);
+  }, [profiles, currentUserId, items, transactions, reviews, notifications, favorites, reports, isInitialized]);
 
   // Helper to ensure any referenced profile exists in Supabase Cloud
   const ensureProfileInSupabase = async (profileOrId: Profile | string | null | undefined): Promise<void> => {
@@ -899,6 +940,99 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const submitReport = (params: {
+    targetType: ReportTargetType;
+    targetId: string;
+    targetTitle?: string;
+    targetDetails?: string;
+    targetUserId?: string;
+    targetUserName?: string;
+    reason: ReportReason;
+    description: string;
+  }): ReportItem => {
+    const reasonLabels: Record<ReportReason, string> = {
+      COMMERCIAL_MONEY: 'Tiền bạc & Buôn bán thương mại',
+      PROHIBITED_SUBSTANCE: 'Chất cấm & Hàng nguy hiểm',
+      VIOLENCE_HARASSMENT: 'Bạo lực & Ngôn từ thù hằn',
+      FRAUD_SCAM: 'Lừa đảo & Gian lận',
+      OTHER: 'Lý do khác',
+    };
+
+    const newReport: ReportItem = {
+      id: `rep-${Date.now()}`,
+      reporter_id: currentUser?.id || 'guest',
+      reporter_name: currentUser?.full_name || 'Thành viên Liên Chiểu',
+      reporter_email: currentUser?.email,
+      target_type: params.targetType,
+      target_id: params.targetId,
+      target_title: params.targetTitle,
+      target_details: params.targetDetails,
+      target_user_id: params.targetUserId,
+      target_user_name: params.targetUserName,
+      reason: params.reason,
+      reason_text: reasonLabels[params.reason] || 'Vi phạm quy định',
+      description: params.description.trim(),
+      status: 'PENDING',
+      created_at: new Date().toISOString(),
+    };
+
+    setReports((prev) => {
+      const updated = [newReport, ...prev];
+      try {
+        localStorage.setItem(STORAGE_KEYS.REPORTS, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    // Notify admins
+    const adminNotif: NotificationItem = {
+      id: `notif-rep-${Date.now()}`,
+      user_id: 'usr-admin-bql',
+      title: `Báo cáo vi phạm: [${params.targetType}]`,
+      content: `${currentUser?.full_name || 'Một thành viên'} vừa báo cáo ${params.targetTitle || params.targetType} với lý do "${reasonLabels[params.reason]}".`,
+      is_read: false,
+      action_link: '/admin',
+      type: 'moderation',
+      created_at: new Date().toISOString(),
+    };
+    setNotifications((prev) => [adminNotif, ...prev]);
+
+    return newReport;
+  };
+
+  const resolveReport = (reportId: string, action: 'RESOLVE' | 'DISMISS', adminNotes?: string) => {
+    setReports((prev) => {
+      const updated = prev.map((r) => {
+        if (r.id === reportId) {
+          return {
+            ...r,
+            status: (action === 'RESOLVE' ? 'RESOLVED' : 'DISMISSED') as ReportStatus,
+            admin_notes:
+              adminNotes ||
+              (action === 'RESOLVE'
+                ? 'Admin đã xác minh và xử lý vi phạm.'
+                : 'Admin đã xem xét và bác bỏ báo cáo do không có vi phạm.'),
+            resolved_at: new Date().toISOString(),
+            resolved_by: currentUser?.full_name || 'Ban Quản Trị Admin',
+          };
+        }
+        return r;
+      });
+      try {
+        localStorage.setItem(STORAGE_KEYS.REPORTS, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const adminHideItem = (itemId: string) => {
+    updateItem(itemId, { status: 'HIDDEN' });
+  };
+
+  const adminRestoreItem = (itemId: string) => {
+    updateItem(itemId, { status: 'ACTIVE' });
+  };
+
   const getTransactionById = (id: string): Transaction | undefined => {
     const t = transactions.find((item) => item.id === id);
     if (!t) return undefined;
@@ -1543,6 +1677,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favorites,
         toggleFavorite,
         toggleLockUser,
+        reports,
+        submitReport,
+        resolveReport,
+        adminHideItem,
+        adminRestoreItem,
         isSupabaseMode: isSupabaseConfigured(),
         activeRole: currentUser ? currentUser.role : 'guest',
       }}

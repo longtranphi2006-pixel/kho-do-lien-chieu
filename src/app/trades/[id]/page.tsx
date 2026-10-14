@@ -31,9 +31,11 @@ import {
   AlertTriangle,
   X,
   Users,
+  Flag,
 } from 'lucide-react';
-import { TradeMessage, Transaction } from '@/types';
+import { TradeMessage, Transaction, ReportTargetType } from '@/types';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { ReportModal } from '@/components/common/ReportModal';
 
 function TradeStepperContent() {
   const params = useParams();
@@ -68,6 +70,32 @@ function TradeStepperContent() {
   const [cancelReason, setCancelReason] = useState('');
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+
+  // Report Modal State (Trade & Message Reporting)
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [reportTargetType, setReportTargetType] = useState<ReportTargetType>('TRADE');
+  const [reportTargetId, setReportTargetId] = useState('');
+  const [reportTargetTitle, setReportTargetTitle] = useState('');
+  const [reportTargetDetails, setReportTargetDetails] = useState<string | undefined>(undefined);
+  const [reportTargetUserId, setReportTargetUserId] = useState<string | undefined>(undefined);
+  const [reportTargetUserName, setReportTargetUserName] = useState<string | undefined>(undefined);
+
+  const handleOpenReport = (
+    type: ReportTargetType,
+    id: string,
+    title: string,
+    details?: string,
+    userId?: string,
+    userName?: string
+  ) => {
+    setReportTargetType(type);
+    setReportTargetId(id);
+    setReportTargetTitle(title);
+    setReportTargetDetails(details);
+    setReportTargetUserId(userId);
+    setReportTargetUserName(userName);
+    setReportModalOpen(true);
+  };
 
   // Direct Supabase fallback fetch if transaction not found in in-memory store
   useEffect(() => {
@@ -344,15 +372,34 @@ function TradeStepperContent() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      {/* Back button & ID */}
-      <div className="flex items-center justify-between">
+      {/* Back button & ID & Report */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600 hover:text-[#0F5B4B]"
         >
           <ArrowLeft className="w-4 h-4" /> Quay lại Trang chủ
         </Link>
-        <span className="text-xs text-slate-400 font-mono">Mã GD: #{transaction.id}</span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              handleOpenReport(
+                'TRADE',
+                transaction.id,
+                `Giao dịch trao đổi #${transaction.id} (${item?.title || 'Món đồ'})`,
+                `Giao dịch giữa ${giver?.full_name || 'Bên Cho'} và ${receiver?.full_name || 'Bên Nhận'}`,
+                isActuallyGiver ? receiver?.id : giver?.id,
+                isActuallyGiver ? receiver?.full_name : giver?.full_name
+              )
+            }
+            className="text-xs text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+            title="Báo cáo phiên giao dịch nếu đối tác vi phạm thỏa thuận, đòi tiền, có hành vi lừa đảo..."
+          >
+            <Flag className="w-3.5 h-3.5" /> Báo cáo giao dịch vi phạm
+          </button>
+          <span className="text-xs text-slate-400 font-mono">Mã GD: #{transaction.id}</span>
+        </div>
       </div>
 
       {/* Title */}
@@ -1094,14 +1141,36 @@ function TradeStepperContent() {
                           </span>
                         </div>
 
-                        <div
-                          className={`p-3 rounded-2xl text-xs leading-relaxed ${
-                            isMine
-                              ? 'bg-[#0F5B4B] text-white rounded-tr-xs shadow-xs'
-                              : 'bg-slate-100 text-slate-800 rounded-tl-xs border border-slate-200/80'
-                          }`}
-                        >
-                          {msg.content}
+                        <div className="flex items-center gap-1.5 group">
+                          <div
+                            className={`p-3 rounded-2xl text-xs leading-relaxed ${
+                              isMine
+                                ? 'bg-[#0F5B4B] text-white rounded-tr-xs shadow-xs'
+                                : 'bg-slate-100 text-slate-800 rounded-tl-xs border border-slate-200/80'
+                            }`}
+                          >
+                            {msg.content}
+                          </div>
+
+                          {!isMine && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleOpenReport(
+                                  'MESSAGE',
+                                  msg.id,
+                                  `Tin nhắn từ ${msg.sender_name || 'Đối tác'} trong GD #${transaction.id}`,
+                                  msg.content,
+                                  msg.sender_id,
+                                  msg.sender_name
+                                )
+                              }
+                              className="opacity-40 group-hover:opacity-100 hover:text-rose-600 text-slate-400 p-1 rounded-full transition-opacity cursor-pointer shrink-0"
+                              title="Báo cáo tin nhắn này (đòi tiền, lừa cọc, chất cấm, xúc phạm...)"
+                            >
+                              <Flag className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -1252,6 +1321,18 @@ function TradeStepperContent() {
           </div>
         </div>
       )}
+
+      {/* Report Modal */}
+      <ReportModal
+        isOpen={reportModalOpen}
+        onClose={() => setReportModalOpen(false)}
+        targetType={reportTargetType}
+        targetId={reportTargetId}
+        targetTitle={reportTargetTitle}
+        targetDetails={reportTargetDetails}
+        targetUserId={reportTargetUserId}
+        targetUserName={reportTargetUserName}
+      />
     </div>
   );
 }

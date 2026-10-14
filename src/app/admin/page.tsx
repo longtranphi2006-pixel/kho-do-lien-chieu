@@ -3,7 +3,16 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAppStore } from '@/lib/store';
-import { Item, Profile, Transaction, ModerationResult } from '@/types';
+import {
+  Item,
+  Profile,
+  Transaction,
+  ModerationResult,
+  ReportItem,
+  ReportTargetType,
+  ReportReason,
+  ReportStatus,
+} from '@/types';
 import {
   AiModerationConfig,
   DEFAULT_AI_CONFIG,
@@ -24,6 +33,7 @@ import {
   Download,
   Filter,
   Eye,
+  EyeOff,
   Trash2,
   ArrowUpDown,
   Check,
@@ -48,6 +58,9 @@ import {
   Tag,
   FileText,
   Ban,
+  DollarSign,
+  MessageSquareWarning,
+  Flag,
 } from 'lucide-react';
 
 export default function AdminDashboardPage() {
@@ -60,14 +73,27 @@ export default function AdminDashboardPage() {
     rejectItem,
     deleteItem,
     toggleLockUser,
+    reports,
+    resolveReport,
+    adminHideItem,
+    adminRestoreItem,
+    cancelTrade,
     isSupabaseMode,
   } = useAppStore();
 
-  const [activeTab, setActiveTab] = useState<'analytics' | 'queue' | 'items' | 'users' | 'trades' | 'ai-rules'>('analytics');
+  const [activeTab, setActiveTab] = useState<
+    'analytics' | 'queue' | 'items' | 'users' | 'trades' | 'reports' | 'ai-rules'
+  >('analytics');
   const [itemSearch, setItemSearch] = useState('');
   const [userSearch, setUserSearch] = useState('');
   const [tradeSearch, setTradeSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+
+  // Reports state
+  const [reportTypeFilter, setReportTypeFilter] = useState<'ALL' | ReportTargetType>('ALL');
+  const [reportStatusFilter, setReportStatusFilter] = useState<'ALL' | ReportStatus>('ALL');
+  const [reportSearch, setReportSearch] = useState('');
+  const [reportActionMsg, setReportActionMsg] = useState<string | null>(null);
 
   // Preview Image Modal state
   const [previewItem, setPreviewItem] = useState<Item | null>(null);
@@ -216,6 +242,24 @@ export default function AdminDashboardPage() {
     return true;
   });
 
+  // Filtered Reports
+  const filteredReports = reports.filter((r) => {
+    if (reportTypeFilter !== 'ALL' && r.target_type !== reportTypeFilter) return false;
+    if (reportStatusFilter !== 'ALL' && r.status !== reportStatusFilter) return false;
+    if (reportSearch.trim()) {
+      const q = reportSearch.toLowerCase();
+      const matchReporter = (r.reporter_name || '').toLowerCase().includes(q);
+      const matchTitle = (r.target_title || '').toLowerCase().includes(q);
+      const matchDesc = (r.description || '').toLowerCase().includes(q);
+      const matchDetails = (r.target_details || '').toLowerCase().includes(q);
+      const matchUser = (r.target_user_name || '').toLowerCase().includes(q);
+      return matchReporter || matchTitle || matchDesc || matchDetails || matchUser;
+    }
+    return true;
+  });
+
+  const pendingReportsCount = reports.filter((r) => r.status === 'PENDING').length;
+
   // Export CSV helper for Zero-Code admin
   const handleExportCSV = (tableName: string) => {
     let csvContent = 'data:text/csv;charset=utf-8,';
@@ -228,6 +272,11 @@ export default function AdminDashboardPage() {
       csvContent += 'ID,HoTen,Truong,LienHe,DaTrao,UyTin,VaiTro,XacThuc,BiKhoa\n';
       allUsers.forEach((u) => {
         csvContent += `"${u.id}","${u.full_name}","${u.university}","${u.phone || u.email || ''}","${u.items_given_count}","${u.reputation_score}","${u.role}","${u.is_verified}","${!!u.is_locked}"\n`;
+      });
+    } else if (tableName === 'reports') {
+      csvContent += 'ID,Loai,DoiTuong,LyDo,NguoiBaoCao,TrangThai,NgayTao\n';
+      reports.forEach((r) => {
+        csvContent += `"${r.id}","${r.target_type}","${r.target_title || r.target_id}","${r.reason_text}","${r.reporter_name || ''}","${r.status}","${r.created_at}"\n`;
       });
     }
     const encodedUri = encodeURI(csvContent);
@@ -467,6 +516,25 @@ export default function AdminDashboardPage() {
         >
           <Repeat className="w-4 h-4" />
           Lịch sử giao dịch ({transactions.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('reports')}
+          className={`pb-3 border-b-2 flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap ${
+            activeTab === 'reports'
+              ? 'border-rose-600 text-rose-600 font-bold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <ShieldAlert className="w-4 h-4 text-rose-600" />
+          Xử lý Báo cáo vi phạm
+          {pendingReportsCount > 0 ? (
+            <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-bold">
+              {pendingReportsCount}
+            </span>
+          ) : (
+            <span className="text-[11px] text-slate-400">({reports.length})</span>
+          )}
         </button>
 
         <button
@@ -975,6 +1043,388 @@ export default function AdminDashboardPage() {
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Tab 5: Xử lý Báo cáo vi phạm (Reports Management) */}
+      {activeTab === 'reports' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Action notification toast */}
+          {reportActionMsg && (
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-sm font-semibold flex items-center justify-between shadow-md animate-fade-in">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span>{reportActionMsg}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReportActionMsg(null)}
+                className="text-emerald-700 hover:text-emerald-900 p-1"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Banner & Stats */}
+          <div className="bg-gradient-to-r from-rose-700 via-rose-800 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+            <div className="absolute -right-10 -bottom-10 w-60 h-60 rounded-full bg-rose-500/20 blur-3xl pointer-events-none" />
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-rose-200 text-xs font-bold backdrop-blur-xs border border-white/10">
+                  <ShieldAlert className="w-3.5 h-3.5 text-rose-300 animate-pulse" />
+                  Trung Tâm Xử Lý Vi Phạm • Toàn Quyền Quản Trị
+                </div>
+                <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">
+                  Xử Lý Báo Cáo Vi Phạm Cộng Đồng
+                </h2>
+                <p className="text-xs sm:text-sm text-rose-100/90 max-w-2xl leading-relaxed">
+                  Tiếp nhận và giải quyết các khiếu nại về tiền bạc thương mại, chất cấm/vũ khí, bạo lực/quấy rối, lừa đảo đối với <strong>Bài đăng, Tài khoản, Giao dịch</strong> và <strong>Tin nhắn</strong>.
+                </p>
+                <div className="pt-2 flex flex-wrap gap-3 text-xs">
+                  <span className="px-3 py-1 rounded-xl bg-white/10 backdrop-blur-xs border border-white/10">
+                    Tổng báo cáo: <strong>{reports.length}</strong>
+                  </span>
+                  <span className="px-3 py-1 rounded-xl bg-rose-500/40 backdrop-blur-xs border border-rose-400/40 text-amber-200 font-bold">
+                    Chờ duyệt: <strong>{pendingReportsCount}</strong>
+                  </span>
+                  <span className="px-3 py-1 rounded-xl bg-emerald-500/30 backdrop-blur-xs border border-emerald-400/30 text-emerald-200">
+                    Đã giải quyết: <strong>{reports.filter(r => r.status === 'RESOLVED').length}</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleExportCSV('reports')}
+                  className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold backdrop-blur-xs border border-white/20 transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" /> Xuất file CSV
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Filters & Search */}
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Tìm theo tiêu đề, người báo cáo, nội dung, ID..."
+                value={reportSearch}
+                onChange={(e) => setReportSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-rose-600 bg-slate-50/50"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2.5">
+              <select
+                value={reportTypeFilter}
+                onChange={(e) => setReportTypeFilter(e.target.value as any)}
+                className="px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white text-slate-700 font-medium"
+              >
+                <option value="ALL">Tất cả đối tượng</option>
+                <option value="ITEM">📦 Bài đăng (Item)</option>
+                <option value="USER">👤 Tài khoản (User)</option>
+                <option value="TRADE">🔄 Giao dịch (Trade)</option>
+                <option value="MESSAGE">💬 Tin nhắn (Chat)</option>
+              </select>
+
+              <select
+                value={reportStatusFilter}
+                onChange={(e) => setReportStatusFilter(e.target.value as any)}
+                className="px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white text-slate-700 font-medium"
+              >
+                <option value="ALL">Tất cả trạng thái</option>
+                <option value="PENDING">⏳ Chờ xử lý</option>
+                <option value="RESOLVED">✅ Đã xử lý vi phạm</option>
+                <option value="DISMISSED">❌ Đã bác bỏ</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Reports List */}
+          {filteredReports.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-slate-200/90 p-12 text-center space-y-3">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-100">
+                <CheckCircle2 className="w-7 h-7" />
+              </div>
+              <h3 className="font-bold text-slate-800 text-base">Không có báo cáo nào khớp bộ lọc</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Hiện tại tất cả hoạt động trong hệ thống đều tuân thủ đúng quy định hoặc chưa có phản ánh vi phạm nào.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredReports.map((report) => {
+                const targetItem = items.find((i) => i.id === report.target_id);
+                const targetUser = allUsers.find(
+                  (u) => u.id === report.target_user_id || u.id === report.target_id
+                );
+
+                return (
+                  <div
+                    key={report.id}
+                    className={`bg-white rounded-2xl border p-5 transition-all shadow-xs space-y-4 ${
+                      report.status === 'PENDING'
+                        ? 'border-rose-200 bg-rose-50/20'
+                        : report.status === 'RESOLVED'
+                        ? 'border-emerald-200/80'
+                        : 'border-slate-200 opacity-80'
+                    }`}
+                  >
+                    {/* Top Row: Target type, violation badge, status, timestamp */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Target Type badge */}
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${
+                          report.target_type === 'ITEM'
+                            ? 'bg-blue-100 text-blue-800'
+                            : report.target_type === 'USER'
+                            ? 'bg-purple-100 text-purple-800'
+                            : report.target_type === 'TRADE'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {report.target_type === 'ITEM' && '📦 Bài đăng'}
+                          {report.target_type === 'USER' && '👤 Tài khoản'}
+                          {report.target_type === 'TRADE' && '🔄 Giao dịch'}
+                          {report.target_type === 'MESSAGE' && '💬 Tin nhắn'}
+                        </span>
+
+                        {/* Violation Reason */}
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 text-xs font-bold">
+                          <AlertTriangle className="w-3 h-3 text-rose-600" />
+                          {report.reason_text}
+                        </span>
+
+                        {/* Status */}
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                          report.status === 'PENDING'
+                            ? 'bg-amber-100 text-amber-800 font-bold animate-pulse'
+                            : report.status === 'RESOLVED'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}>
+                          {report.status === 'PENDING' && '⏳ Đang chờ Admin xử lý'}
+                          {report.status === 'RESOLVED' && '✅ Đã xử lý'}
+                          {report.status === 'DISMISSED' && '❌ Bác bỏ'}
+                        </span>
+                      </div>
+
+                      <div className="text-[11px] text-slate-400">
+                        {new Date(report.created_at).toLocaleString('vi-VN')}
+                      </div>
+                    </div>
+
+                    {/* Middle Content */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                      {/* Left: Target details & User info (7 cols) */}
+                      <div className="lg:col-span-7 space-y-2">
+                        <div className="text-xs">
+                          <span className="text-slate-500 font-medium">Đối tượng bị báo cáo: </span>
+                          <span className="font-bold text-slate-900">
+                            {report.target_title || report.target_id}
+                          </span>
+                        </div>
+
+                        {report.target_user_name && (
+                          <div className="text-xs text-slate-600">
+                            Người liên quan: <strong className="text-slate-800">{report.target_user_name}</strong>
+                            {targetUser?.is_locked && (
+                              <span className="ml-2 px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold">
+                                🔒 Đang bị khóa
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {report.target_details && (
+                          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 font-mono">
+                            <strong>Trích xuất nội dung:</strong> &ldquo;{report.target_details}&rdquo;
+                          </div>
+                        )}
+
+                        <div className="p-3 rounded-xl bg-rose-50/50 border border-rose-100 text-xs text-slate-800">
+                          <div className="font-bold text-rose-900 mb-1 flex items-center gap-1">
+                            <Info className="w-3.5 h-3.5" /> Mô tả chi tiết / Bằng chứng người báo cáo cung cấp:
+                          </div>
+                          <p className="leading-relaxed whitespace-pre-wrap">{report.description}</p>
+                        </div>
+
+                        <div className="text-[11px] text-slate-500">
+                          Người gửi báo cáo: <strong>{report.reporter_name || 'Người dùng ẩn danh'}</strong> ({report.reporter_id})
+                        </div>
+
+                        {report.admin_notes && (
+                          <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900">
+                            <strong>Ghi chú xử lý của Admin:</strong> {report.admin_notes}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right: Direct Actions for Admin (5 cols) */}
+                      <div className="lg:col-span-5 bg-slate-50/80 rounded-xl p-4 border border-slate-200 space-y-3 flex flex-col justify-between">
+                        <div>
+                          <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-2">
+                            <ShieldCheck className="w-4 h-4 text-[#0F5B4B]" />
+                            Hành Động Can Thiệp Trực Tiếp
+                          </div>
+                          <p className="text-[11px] text-slate-500 mb-3">
+                            Admin có quyền ẩn/xóa bài, khóa tài khoản hoặc hủy giao dịch ngay lập tức:
+                          </p>
+
+                          <div className="space-y-2">
+                            {/* Actions for Item */}
+                            {report.target_type === 'ITEM' && (
+                              <div className="flex flex-wrap gap-1.5">
+                                <Link
+                                  href={`/items/${report.target_id}`}
+                                  target="_blank"
+                                  className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold flex items-center gap-1"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" /> Xem bài viết
+                                </Link>
+
+                                {targetItem && targetItem.status !== 'HIDDEN' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      adminHideItem(report.target_id);
+                                      setReportActionMsg(`Đã ẩn bài đăng "${targetItem.title}" khỏi trang chủ & tìm kiếm.`);
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <EyeOff className="w-3.5 h-3.5" /> Ẩn bài này ngay
+                                  </button>
+                                )}
+
+                                {targetItem && targetItem.status === 'HIDDEN' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      adminRestoreItem(report.target_id);
+                                      setReportActionMsg(`Đã khôi phục hiển thị cho bài đăng "${targetItem.title}".`);
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" /> Khôi phục bài
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`Bạn có chắc chắn muốn xóa vĩnh viễn bài đăng ${report.target_id}?`)) {
+                                      deleteItem(report.target_id);
+                                      resolveReport(report.id, 'RESOLVE', 'Admin đã xóa vĩnh viễn bài viết vi phạm.');
+                                      setReportActionMsg(`Đã xóa vĩnh viễn bài đăng vi phạm.`);
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" /> Xóa vĩnh viễn bài
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Actions for User */}
+                            {(report.target_type === 'USER' || report.target_user_id) && (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {targetUser && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const userId = report.target_user_id || report.target_id;
+                                      toggleLockUser(userId);
+                                      setReportActionMsg(`Đã thay đổi trạng thái khóa tài khoản ${targetUser.full_name}.`);
+                                    }}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer ${
+                                      targetUser.is_locked
+                                        ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                        : 'bg-rose-700 text-white hover:bg-rose-800'
+                                    }`}
+                                  >
+                                    {targetUser.is_locked ? (
+                                      <>
+                                        <Unlock className="w-3.5 h-3.5" /> Mở khóa tài khoản
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Lock className="w-3.5 h-3.5" /> Khóa tài khoản vi phạm
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Actions for Trade */}
+                            {(report.target_type === 'TRADE' || report.target_type === 'MESSAGE') && (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                <Link
+                                  href={`/trades/${report.target_type === 'TRADE' ? report.target_id : report.target_id.split('-')[0] || ''}`}
+                                  target="_blank"
+                                  className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold flex items-center gap-1"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" /> Vào phòng giao dịch
+                                </Link>
+
+                                {report.target_type === 'TRADE' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (confirm(`Bạn có chắc muốn hủy giao dịch này do vi phạm quy chế?`)) {
+                                        cancelTrade(report.target_id, 'Hủy bởi Admin do vi phạm quy tắc cộng đồng');
+                                        resolveReport(report.id, 'RESOLVE', 'Admin đã can thiệp hủy phiên giao dịch.');
+                                        setReportActionMsg('Đã hủy phiên giao dịch vi phạm.');
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Ban className="w-3.5 h-3.5" /> Hủy giao dịch này
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Resolve Report status row */}
+                        <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                          <div className="text-[11px] font-bold text-slate-600">Đóng hồ sơ báo cáo:</div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                resolveReport(report.id, 'DISMISS', 'Báo cáo không đủ bằng chứng hoặc không vi phạm quy chế.');
+                                setReportActionMsg('Đã bác bỏ báo cáo.');
+                              }}
+                              className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-200 text-xs font-semibold cursor-pointer"
+                            >
+                              Bác bỏ
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                resolveReport(report.id, 'RESOLVE', 'Admin đã tiếp nhận và áp dụng chế tài xử lý.');
+                                setReportActionMsg('Đã xử lý xong báo cáo vi phạm.');
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-[#0F5B4B] text-white hover:bg-[#0A3F34] text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1"
+                            >
+                              <Check className="w-3.5 h-3.5" /> Đã xử lý vi phạm
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

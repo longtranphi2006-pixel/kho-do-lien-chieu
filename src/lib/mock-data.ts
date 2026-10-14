@@ -1,4 +1,4 @@
-import { Profile, Item, Transaction, Review, NotificationItem } from '@/types';
+import { Profile, Item, Transaction, Review, NotificationItem, ReportItem } from '@/types';
 
 export const MOCK_PROFILES: Profile[] = [
   {
@@ -290,3 +290,55 @@ export const MOCK_NOTIFICATIONS: NotificationItem[] = [
     created_at: '2026-10-01T08:00:00Z',
   },
 ];
+
+export const MOCK_REPORTS: ReportItem[] = [
+  {
+    id: 'rep-001',
+    reporter_id: 'usr-mai-supham',
+    reporter_name: 'Trần Thị Mai',
+    target_type: 'ITEM',
+    target_id: 'item-10-flagged',
+    target_title: 'Tai nghe Bluetooth không dây AirP - Cần thanh lý giá 150k hoặc đổi',
+    target_details: 'Bài đăng yêu cầu thanh lý 150k tiền mặt, vi phạm quy định P2P phi thương mại 0đ.',
+    target_user_id: 'usr-quan-it',
+    target_user_name: 'Nguyễn Văn Quân',
+    reason: 'COMMERCIAL_MONEY',
+    reason_text: 'Tiền bạc & Buôn bán thương mại',
+    description: 'Người này yêu cầu chuyển khoản 150k tiền mặt khi hẹn gặp, không phải chia sẻ hay đổi đồ sinh viên.',
+    status: 'PENDING',
+    created_at: '2026-10-13T08:15:00Z',
+  },
+  {
+    id: 'rep-002',
+    reporter_id: 'usr-an-bachkhoa',
+    reporter_name: 'Nguyễn Văn An',
+    target_type: 'USER',
+    target_id: 'usr-fake-01',
+    target_title: 'Tài khoản mạo danh SV Bách Khoa',
+    target_details: 'Tài khoản liên tục nhắn tin yêu cầu cọc tiền trước khi gửi đồ.',
+    target_user_id: 'usr-fake-01',
+    target_user_name: 'Lê Hoàng Giả Mạo',
+    reason: 'FRAUD_SCAM',
+    reason_text: 'Lừa đảo & Gian lận',
+    description: 'Tài khoản này nhắn tin bảo chuyển cọc 50k phí giữ chỗ nhận máy tính Casio rồi chặn tin nhắn.',
+    status: 'PENDING',
+    created_at: '2026-10-14T10:30:00Z',
+  },
+  {
+    id: 'rep-003',
+    reporter_id: 'usr-long-bachkhoa',
+    reporter_name: 'Trần Phi Long',
+    target_type: 'MESSAGE',
+    target_id: 'msg-spam-01',
+    target_title: 'Tin nhắn quấy rối & xúc phạm',
+    target_details: '"Mày không cho tao thì đừng hòng sống yên ở KTX"',
+    target_user_id: 'usr-fake-01',
+    target_user_name: 'Người dùng lạ',
+    reason: 'VIOLENCE_HARASSMENT',
+    reason_text: 'Bạo lực & Đe dọa / Quấy rối',
+    description: 'Bị từ chối nhận đồ thì dùng lời lẽ đe dọa bạo lực trong phòng chat hẹn gặp.',
+    status: 'PENDING',
+    created_at: '2026-10-14T14:20:00Z',
+  },
+];
+

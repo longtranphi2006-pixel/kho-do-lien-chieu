@@ -1,0 +1,1 @@
+Hiển thị thông tin người cho hang chưa đúng
