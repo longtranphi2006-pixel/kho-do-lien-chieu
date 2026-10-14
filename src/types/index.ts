@@ -24,6 +24,11 @@ export interface Profile {
   role: UserRole;
   is_locked?: boolean;
   address?: string;
+  bio?: string;
+  target_group?: string;
+  living_area?: string;
+  preferred_contact?: 'CHAT' | 'PHONE' | 'BOTH';
+  password?: string;
   created_at: string;
 }
 

@@ -67,8 +67,28 @@ const STORAGE_KEYS = {
   PROFILES: 'kdlc_profiles_v3',
 };
 
+export const hydrateProfile = (p: Profile): Profile => {
+  if (p.address && typeof p.address === 'string' && p.address.startsWith('{') && p.address.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(p.address);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          ...p,
+          address: typeof parsed.address === 'string' ? parsed.address : p.address,
+          bio: parsed.bio ?? p.bio,
+          target_group: parsed.target_group ?? p.target_group,
+          living_area: parsed.living_area ?? p.living_area,
+          preferred_contact: parsed.preferred_contact ?? p.preferred_contact,
+          password: parsed.password ?? p.password,
+        };
+      }
+    } catch {}
+  }
+  return p;
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [profiles, setProfiles] = useState<Profile[]>(MOCK_PROFILES);
+  const [profiles, setProfiles] = useState<Profile[]>(() => MOCK_PROFILES.map(hydrateProfile));
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [items, setItems] = useState<Item[]>(MOCK_ITEMS);
   const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
@@ -81,7 +101,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     try {
       const savedProfiles = localStorage.getItem(STORAGE_KEYS.PROFILES);
-      if (savedProfiles) setProfiles(JSON.parse(savedProfiles));
+      if (savedProfiles) {
+        const parsed = JSON.parse(savedProfiles) as Profile[];
+        setProfiles(parsed.map(hydrateProfile));
+      }
 
       let savedUserId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
       if (savedUserId === 'usr-oauth-1791902102209') {
@@ -193,6 +216,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
+      const extendedMeta = {
+        address: pObj.address || '',
+        bio: pObj.bio || '',
+        target_group: pObj.target_group || '',
+        living_area: pObj.living_area || '',
+        preferred_contact: pObj.preferred_contact || 'CHAT',
+        password: pObj.password || '',
+      };
+
       await supabase.from('profiles').upsert({
         id: pObj.id,
         full_name: pObj.full_name || 'Thành viên Liên Chiểu',
@@ -208,7 +240,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         completed_trades_count: pObj.completed_trades_count ?? 0,
         role: pObj.role || 'user',
         is_locked: pObj.is_locked ?? false,
-        address: pObj.address,
+        address: JSON.stringify(extendedMeta),
       });
     } catch (err) {
       console.warn('ensureProfileInSupabase error:', err);
@@ -278,7 +310,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (profilesRes.data && profilesRes.data.length > 0) {
           setProfiles((prev) => {
             const map = new Map(prev.map((p) => [p.id, p]));
-            profilesRes.data!.forEach((p: Profile) => {
+            profilesRes.data!.forEach((rawProfile: Profile) => {
+              const p = hydrateProfile(rawProfile);
               const local = map.get(p.id);
               if (
                 local &&
@@ -667,7 +700,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (isSupabaseConfigured() && supabase) {
-      supabase.from('profiles').update(updates).eq('id', currentUser.id).then(() => {});
+      const extendedMeta = {
+        address: updatedUser.address || '',
+        bio: updatedUser.bio || '',
+        target_group: updatedUser.target_group || '',
+        living_area: updatedUser.living_area || '',
+        preferred_contact: updatedUser.preferred_contact || 'CHAT',
+        password: updatedUser.password || '',
+      };
+
+      const supabasePayload: Record<string, any> = {
+        full_name: updatedUser.full_name,
+        avatar_url: updatedUser.avatar_url,
+        phone: updatedUser.phone,
+        email: updatedUser.email,
+        university: updatedUser.university,
+        department: updatedUser.department,
+        student_id: updatedUser.student_id,
+        address: JSON.stringify(extendedMeta),
+      };
+
+      supabase.from('profiles').update(supabasePayload).eq('id', currentUser.id).then(() => {});
     }
   };
 
