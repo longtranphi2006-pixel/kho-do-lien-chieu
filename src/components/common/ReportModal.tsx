@@ -75,11 +75,21 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   targetUserId,
   targetUserName,
 }) => {
-  const { currentUser, submitReport } = useAppStore();
+  const { currentUser, submitReport, reports } = useAppStore();
   const [selectedReason, setSelectedReason] = useState<ReportReason>('COMMERCIAL_MONEY');
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+
+  const currentUserId = currentUser?.id || 'guest';
+  const alreadyReported = Boolean(
+    reports?.some(
+      (r) =>
+        r.reporter_id === currentUserId &&
+        r.target_type === targetType &&
+        r.target_id === targetId
+    )
+  );
 
   if (!isOpen) return null;
 
@@ -94,6 +104,10 @@ export const ReportModal: React.FC<ReportModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (alreadyReported) {
+      alert('Bạn đã gửi báo cáo đối tượng này rồi. Ban Quản Trị đang thụ lý giải quyết, vui lòng không gửi lặp.');
+      return;
+    }
     if (!description.trim()) {
       alert('Vui lòng nhập mô tả chi tiết hoặc bằng chứng vi phạm để Admin có căn cứ xử lý.');
       return;
@@ -250,6 +264,19 @@ export const ReportModal: React.FC<ReportModalProps> = ({
               />
             </div>
 
+            {/* Already Reported Notice */}
+            {alreadyReported && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong>Bạn đã gửi báo cáo đối tượng này rồi!</strong>
+                  <p className="mt-0.5 text-amber-800">
+                    Báo cáo của bạn đã được ghi nhận trong danh sách chờ xử lý của Admin. Mỗi thành viên chỉ gửi báo cáo 1 lần để tránh gây trùng lặp.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Admin Policy Callout */}
             <div className="p-3 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 text-[11px] flex items-start gap-2 leading-relaxed">
               <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -270,11 +297,19 @@ export const ReportModal: React.FC<ReportModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:brightness-105 text-white font-bold text-xs sm:text-sm shadow-md shadow-rose-600/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
+                disabled={isSubmitting || alreadyReported}
+                className={`px-5 py-2.5 rounded-xl text-white font-bold text-xs sm:text-sm shadow-md flex items-center gap-1.5 transition-all ${
+                  alreadyReported
+                    ? 'bg-slate-400 cursor-not-allowed opacity-60'
+                    : 'bg-gradient-to-r from-rose-600 to-rose-700 hover:brightness-105 shadow-rose-600/20 cursor-pointer disabled:opacity-50'
+                }`}
               >
                 <Send className="w-3.5 h-3.5" />
-                {isSubmitting ? 'Đang gửi báo cáo...' : 'Gửi Báo Cáo Tới Admin'}
+                {alreadyReported
+                  ? 'Đã gửi báo cáo trước đó'
+                  : isSubmitting
+                  ? 'Đang gửi báo cáo...'
+                  : 'Gửi Báo Cáo Tới Admin'}
               </button>
             </div>
           </form>

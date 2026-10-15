@@ -1479,6 +1479,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (currentUser && isUserLocked(currentUser)) {
       throw new Error('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
     }
+    const currentReporterId = currentUser?.id || 'guest';
+    const isDuplicate = reports.some(
+      (r) =>
+        r.reporter_id === currentReporterId &&
+        r.target_type === params.targetType &&
+        r.target_id === params.targetId
+    );
+    if (isDuplicate) {
+      throw new Error('Bạn đã gửi báo cáo nội dung này trước đó rồi. Đội ngũ Ban Quản Trị đang thụ lý giải quyết, xin vui lòng không gửi trùng lặp.');
+    }
     const reasonLabels: Record<ReportReason, string> = {
       COMMERCIAL_MONEY: 'Tiền bạc & Buôn bán thương mại',
       PROHIBITED_SUBSTANCE: 'Chất cấm & Hàng nguy hiểm',

@@ -32,6 +32,7 @@ import {
   X,
   Users,
   Flag,
+  ShieldAlert,
 } from 'lucide-react';
 import { TradeMessage, Transaction, ReportTargetType } from '@/types';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
@@ -315,6 +316,10 @@ function TradeStepperContent() {
 
   const handleAdvance = (nextStatus: TradeStatus) => {
     if (!transaction) return;
+    if (!isParticipant) {
+      alert('Bạn đang xem với tư cách Quản trị viên / Giám sát. Chỉ người tham gia trực tiếp mới có quyền thao tác tiến trình này.');
+      return;
+    }
     if (isItemDeleted) {
       alert('Món đồ này đã bị xóa hoàn toàn khỏi kho đồ bởi Ban Quản Trị.');
       return;
@@ -339,6 +344,18 @@ function TradeStepperContent() {
 
   const handleConfirmRole = (role: 'giver' | 'receiver') => {
     if (!transaction) return;
+    if (!isParticipant) {
+      alert('Bạn đang xem với tư cách Quản trị viên / Giám sát. Chỉ người tham gia trực tiếp mới có quyền xác nhận tiến trình này.');
+      return;
+    }
+    if (role === 'giver' && !isActuallyGiver) {
+      alert(`Chỉ Bên Cho (${giver?.full_name || 'chủ đồ'}) mới có quyền bấm nút này.`);
+      return;
+    }
+    if (role === 'receiver' && !isActuallyReceiver) {
+      alert(`Chỉ Bên Nhận (${receiver?.full_name || 'người nhận'}) mới có quyền bấm nút này.`);
+      return;
+    }
     if (isItemDeleted) {
       alert('Món đồ này đã bị xóa hoàn toàn khỏi kho đồ bởi Ban Quản Trị.');
       return;
@@ -835,7 +852,17 @@ function TradeStepperContent() {
         {/* STEP 1: REQUESTED */}
         {!isItemDeleted && !isFrozen && !isCancelled && status === 'REQUESTED' && (
           <div className="space-y-4">
-            {effectiveRole === 'giver' ? (
+            {!isParticipant ? (
+              <div className="space-y-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700">
+                <div className="flex items-center gap-2 font-bold text-xs text-slate-800">
+                  <ShieldAlert className="w-4 h-4 text-[#0F5B4B]" />
+                  Chế độ Quan Sát Viên (Admin / Giám sát):
+                </div>
+                <div className="text-xs text-slate-600 leading-relaxed">
+                  Yêu cầu nhận đồ từ <strong>{receiver?.full_name}</strong> đang chờ <strong>{giver?.full_name} (Bên Cho)</strong> duyệt và chấp thuận. Quản trị viên chỉ có quyền theo dõi, không thao tác thay người dùng.
+                </div>
+              </div>
+            ) : isActuallyGiver ? (
               // Giver has authority to ACCEPT
               <div className="space-y-3 p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200">
                 <div className="flex items-start gap-2 text-emerald-900">
@@ -916,7 +943,17 @@ function TradeStepperContent() {
               </p>
             </div>
 
-            {effectiveRole === 'giver' ? (
+            {!isParticipant ? (
+              <div className="space-y-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700">
+                <div className="flex items-center gap-2 font-bold text-xs text-slate-800">
+                  <ShieldAlert className="w-4 h-4 text-[#0F5B4B]" />
+                  Chế độ Quan Sát Viên (Admin / Giám sát):
+                </div>
+                <div className="text-xs text-slate-600 leading-relaxed">
+                  Hai bên đang tiến hành hẹn gặp tại <strong>{transaction.pickup_location || 'điểm hẹn'}</strong>. Quản trị viên chỉ có quyền giám sát, không tham gia tiến trình trao nhận.
+                </div>
+              </div>
+            ) : isActuallyGiver ? (
               <div className="space-y-2">
                 <p className="text-xs text-slate-600">
                   Khi bạn mang đồ đi đến điểm hẹn, nhấn nút bên dưới để chuyển sang bước gặp mặt:
@@ -949,15 +986,27 @@ function TradeStepperContent() {
         {/* STEP 3: HANDED_OVER (Two-Way Confirmation per user request) */}
         {!isItemDeleted && !isFrozen && !isCancelled && status === 'HANDED_OVER' && !isCompleted && (
           <div className="space-y-5">
-            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-700 flex items-start gap-2.5">
-              <HelpCircle className="w-4 h-4 text-[#0F5B4B] shrink-0 mt-0.5" />
-              <div>
-                <strong>Quy trình xác nhận 2 chiều (Chống gian lận):</strong>
-                <p className="mt-0.5 text-slate-600">
-                  Cả Bên Cho và Bên Nhận phải <strong>tự xác nhận phần của mình</strong>. Người này không thể bấm thay cho người kia. Khi cả hai bên đều bấm xác nhận, giao dịch mới chính thức hoàn tất.
-                </p>
+            {!isParticipant ? (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5">
+                <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <div>
+                  <strong>Chế độ Quan Sát Viên (Admin / Giám sát):</strong>
+                  <p className="mt-0.5 text-amber-800">
+                    Bạn đang xem với tư cách Quản trị viên. Theo quy định, <strong>chỉ Bên Cho và Bên Nhận mới được tự xác nhận phần của mình</strong>. Admin chỉ được xem và không thể can thiệp xác nhận tiến trình thay cho thành viên.
+                  </p>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-700 flex items-start gap-2.5">
+                <HelpCircle className="w-4 h-4 text-[#0F5B4B] shrink-0 mt-0.5" />
+                <div>
+                  <strong>Quy trình xác nhận 2 chiều (Chống gian lận):</strong>
+                  <p className="mt-0.5 text-slate-600">
+                    Cả Bên Cho và Bên Nhận phải <strong>tự xác nhận phần của mình</strong>. Người này không thể bấm thay cho người kia. Khi cả hai bên đều bấm xác nhận, giao dịch mới chính thức hoàn tất.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* 2-Way Confirmation Cards Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -997,7 +1046,7 @@ function TradeStepperContent() {
                 {/* Giver Action Button */}
                 {!transaction.giver_confirmed && (
                   <div>
-                    {effectiveRole === 'giver' ? (
+                    {isActuallyGiver ? (
                       <button
                         onClick={() => handleConfirmRole('giver')}
                         disabled={isUpdating}
@@ -1054,7 +1103,7 @@ function TradeStepperContent() {
                 {/* Receiver Action Button */}
                 {!transaction.receiver_confirmed && (
                   <div>
-                    {effectiveRole === 'receiver' ? (
+                    {isActuallyReceiver ? (
                       <button
                         onClick={() => handleConfirmRole('receiver')}
                         disabled={isUpdating}
