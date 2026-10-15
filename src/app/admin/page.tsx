@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
@@ -312,20 +312,45 @@ function AdminDashboardPageContent() {
     return true;
   });
 
-  // Filtered Users (exclude system config records)
-  const filteredUsers = allUsers.filter((u) => {
-    if (u.id.startsWith('sys-')) return false;
-    if (userSearch.trim()) {
-      const q = userSearch.toLowerCase();
-      return (
-        u.full_name.toLowerCase().includes(q) ||
-        u.university.toLowerCase().includes(q) ||
-        (u.phone && u.phone.includes(q)) ||
-        (u.email && u.email.toLowerCase().includes(q))
-      );
-    }
-    return true;
-  });
+  // Filtered Users (exclude system config records & deduplicate by email/phone)
+  const filteredUsers = useMemo(() => {
+    const rawList = allUsers.filter((u) => {
+      if (u.id.startsWith('sys-')) return false;
+      if (userSearch.trim()) {
+        const q = userSearch.toLowerCase();
+        return (
+          u.full_name.toLowerCase().includes(q) ||
+          u.university.toLowerCase().includes(q) ||
+          (u.phone && u.phone.includes(q)) ||
+          (u.email && u.email.toLowerCase().includes(q))
+        );
+      }
+      return true;
+    });
+
+    const seen = new Set<string>();
+    return rawList.filter((u) => {
+      const emailKey = u.email ? u.email.trim().toLowerCase() : null;
+      const phoneKey = u.phone ? u.phone.replace(/\s+/g, '') : null;
+      const key = emailKey ? `email:${emailKey}` : phoneKey ? `phone:${phoneKey}` : `id:${u.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [allUsers, userSearch]);
+
+  const uniqueUsersCount = useMemo(() => {
+    const seen = new Set<string>();
+    return allUsers.filter((u) => {
+      if (u.id.startsWith('sys-')) return false;
+      const emailKey = u.email ? u.email.trim().toLowerCase() : null;
+      const phoneKey = u.phone ? u.phone.replace(/\s+/g, '') : null;
+      const key = emailKey ? `email:${emailKey}` : phoneKey ? `phone:${phoneKey}` : `id:${u.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).length;
+  }, [allUsers]);
 
   // Filtered Trades
   const filteredTrades = transactions.filter((t) => {
@@ -608,7 +633,7 @@ function AdminDashboardPageContent() {
           }`}
         >
           <Users className="w-4 h-4" />
-          Quản lý thành viên ({allUsers.length})
+          Quản lý thành viên ({userSearch.trim() ? filteredUsers.length : uniqueUsersCount})
         </button>
 
         <button

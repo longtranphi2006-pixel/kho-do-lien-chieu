@@ -190,6 +190,92 @@ export const hydrateProfile = (p: Profile): Profile => {
   return updated;
 };
 
+export const deduplicateProfiles = (list: Profile[]): Profile[] => {
+  const emailMap = new Map<string, Profile>();
+  const phoneMap = new Map<string, Profile>();
+  const sysProfiles: Profile[] = [];
+  const otherProfiles: Profile[] = [];
+
+  for (const raw of list) {
+    const p = hydrateProfile(raw);
+    if (p.id.startsWith('sys-')) {
+      sysProfiles.push(p);
+      continue;
+    }
+
+    const cleanEmail = p.email?.trim().toLowerCase();
+    const cleanPhone = p.phone?.replace(/\s+/g, '');
+
+    if (cleanEmail) {
+      const existing = emailMap.get(cleanEmail);
+      if (!existing) {
+        emailMap.set(cleanEmail, p);
+      } else {
+        const isAdmin = existing.role === 'admin' || p.role === 'admin';
+        let primaryId = existing.id;
+        if (existing.id === 'usr-admin-bql' || p.id === 'usr-admin-bql') {
+          primaryId = 'usr-admin-bql';
+        } else if ((p.completed_trades_count || 0) > (existing.completed_trades_count || 0)) {
+          primaryId = p.id;
+        } else if ((p.items_given_count || 0) > (existing.items_given_count || 0)) {
+          primaryId = p.id;
+        }
+
+        const merged: Profile = {
+          ...existing,
+          ...p,
+          id: primaryId,
+          full_name:
+            existing.full_name && existing.full_name !== 'Thành viên Liên Chiểu' && existing.full_name !== 'admin'
+              ? existing.full_name
+              : p.full_name,
+          reputation_score: Math.max(existing.reputation_score || 0, p.reputation_score || 0),
+          items_given_count: Math.max(existing.items_given_count || 0, p.items_given_count || 0),
+          completed_trades_count: Math.max(existing.completed_trades_count || 0, p.completed_trades_count || 0),
+          role: isAdmin ? 'admin' : 'user',
+          avatar_url: p.avatar_url && !p.avatar_url.includes('photo-1534528741775') ? p.avatar_url : existing.avatar_url,
+          university: p.university && p.university !== 'Trường Đại học Bách khoa - ĐHĐN' ? p.university : existing.university,
+          department: p.department || existing.department,
+          student_id: p.student_id || existing.student_id,
+          address: p.address || existing.address,
+        };
+        emailMap.set(cleanEmail, merged);
+      }
+    } else if (cleanPhone) {
+      const existing = phoneMap.get(cleanPhone);
+      if (!existing) {
+        phoneMap.set(cleanPhone, p);
+      } else {
+        const isAdmin = existing.role === 'admin' || p.role === 'admin';
+        const merged: Profile = {
+          ...existing,
+          ...p,
+          id: (p.completed_trades_count || 0) > (existing.completed_trades_count || 0) ? p.id : existing.id,
+          reputation_score: Math.max(existing.reputation_score || 0, p.reputation_score || 0),
+          items_given_count: Math.max(existing.items_given_count || 0, p.items_given_count || 0),
+          completed_trades_count: Math.max(existing.completed_trades_count || 0, p.completed_trades_count || 0),
+          role: isAdmin ? 'admin' : 'user',
+        };
+        phoneMap.set(cleanPhone, merged);
+      }
+    } else {
+      if (!otherProfiles.some((item) => item.id === p.id)) {
+        otherProfiles.push(p);
+      }
+    }
+  }
+
+  const seenIds = new Set<string>();
+  const combined: Profile[] = [];
+  for (const p of [...sysProfiles, ...Array.from(emailMap.values()), ...Array.from(phoneMap.values()), ...otherProfiles]) {
+    if (!seenIds.has(p.id)) {
+      seenIds.add(p.id);
+      combined.push(p);
+    }
+  }
+  return combined;
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [profiles, setProfiles] = useState<Profile[]>(() => {
     if (typeof window !== 'undefined') {
@@ -197,11 +283,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const savedProfiles = localStorage.getItem(STORAGE_KEYS.PROFILES);
         if (savedProfiles) {
           const parsed = JSON.parse(savedProfiles) as Profile[];
-          return parsed.map(hydrateProfile);
+          return deduplicateProfiles(parsed.map(hydrateProfile));
         }
       } catch {}
     }
-    return MOCK_PROFILES.map(hydrateProfile);
+    return deduplicateProfiles(MOCK_PROFILES.map(hydrateProfile));
   });
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
@@ -519,7 +605,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 map.set(p.id, { ...local, ...p });
               }
             });
-            const merged = Array.from(map.values());
+            const merged = deduplicateProfiles(Array.from(map.values()));
+            // Auto-heal currentUserId if old ID was merged into canonical ID
+            if (currentUserId && !merged.some((p) => p.id === currentUserId)) {
+              const old = Array.from(map.values()).find((p) => p.id === currentUserId);
+              if (old && old.email) {
+                const canonical = merged.find((p) => p.email && p.email.toLowerCase() === old.email!.toLowerCase());
+                if (canonical) {
+                  setCurrentUserId(canonical.id);
+                  try {
+                    localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, canonical.id);
+                  } catch {}
+                }
+              }
+            }
             try {
               localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(merged));
             } catch {}
@@ -858,6 +957,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const login = (identifier: string): boolean => {
     const clean = identifier.trim().toLowerCase();
+
+    // 1. Direct Admin / BQL account login
+    if (clean === 'admin' || clean === 'bql' || clean === 'admin@khodolienchieu.vn' || clean === 'bql-lc-admin') {
+      const adminProfile =
+        profiles.find((p) => p.id === 'usr-admin-bql') ||
+        profiles.find((p) => p.role === 'admin' && !p.id.startsWith('sys-')) ||
+        MOCK_PROFILES.find((p) => p.id === 'usr-admin-bql');
+      if (adminProfile) {
+        setCurrentUserId(adminProfile.id);
+        try {
+          localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, adminProfile.id);
+        } catch {}
+        if (isSupabaseConfigured() && supabase) {
+          ensureProfileInSupabase(adminProfile);
+        }
+        return true;
+      }
+    }
+
     const matched = profiles.find(
       (p) =>
         (p.email && p.email.toLowerCase() === clean) ||
@@ -894,7 +1012,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setProfiles((prev) => {
-      const updated = [...prev, newProfile];
+      const updated = deduplicateProfiles([...prev, newProfile]);
       try {
         localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(updated));
       } catch {}
@@ -919,7 +1037,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     avatar_url?: string;
   }): Profile => {
     const cleanEmail = params.email.trim().toLowerCase();
-    const existing = profiles.find((p) => p.email && p.email.toLowerCase() === cleanEmail);
+    let existing = profiles.find((p) => p.email && p.email.toLowerCase() === cleanEmail);
+
+    if (!existing && typeof window !== 'undefined') {
+      try {
+        const savedProfiles = localStorage.getItem(STORAGE_KEYS.PROFILES);
+        if (savedProfiles) {
+          const parsed = JSON.parse(savedProfiles) as Profile[];
+          existing = parsed.find((p) => p.email && p.email.toLowerCase() === cleanEmail);
+        }
+      } catch {}
+    }
 
     if (existing) {
       const updated: Profile = {
@@ -928,7 +1056,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatar_url: params.avatar_url || existing.avatar_url,
       };
       setProfiles((prev) => {
-        const list = prev.map((p) => (p.id === existing.id ? updated : p));
+        const list = deduplicateProfiles(prev.map((p) => (p.id === existing!.id ? updated : p)));
         try {
           localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(list));
         } catch {}
@@ -944,8 +1072,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updated;
     }
 
+    // Deterministic ID derived from email to guarantee no duplicate entries across sessions
+    const cleanIdPart = cleanEmail.split('@')[0].replace(/[^a-z0-9]/g, '');
+    const deterministicId = `usr-oauth-${cleanIdPart || Date.now()}`;
+
     const newProfile: Profile = {
-      id: `usr-oauth-${Date.now()}`,
+      id: deterministicId,
       full_name: params.name || (cleanEmail.includes('@') ? cleanEmail.split('@')[0] : 'Người dùng Google'),
       avatar_url:
         params.avatar_url ||
@@ -962,7 +1094,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setProfiles((prev) => {
-      const updated = [...prev, newProfile];
+      const updated = deduplicateProfiles([...prev, newProfile]);
       try {
         localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(updated));
       } catch {}

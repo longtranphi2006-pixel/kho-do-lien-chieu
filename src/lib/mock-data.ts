@@ -66,6 +66,7 @@ export const MOCK_PROFILES: Profile[] = [
     items_given_count: 50,
     completed_trades_count: 150,
     role: 'admin',
+    password: 'admin',
     address: 'Văn phòng Tiếp nhận & Điều phối, 168 Hồ Tùng Mậu, P. Hòa Khánh Bắc, Liên Chiểu, TP. Đà Nẵng',
     created_at: '2025-01-01T00:00:00Z',
   },
