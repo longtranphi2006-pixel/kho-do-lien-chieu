@@ -62,6 +62,15 @@ export default function HomePage() {
       }
 
       return true;
+    }).sort((a, b) => {
+      if (searchKeyword.trim()) {
+        const q = searchKeyword.trim().toLowerCase();
+        const aTitle = a.title.toLowerCase().includes(q);
+        const bTitle = b.title.toLowerCase().includes(q);
+        if (aTitle && !bTitle) return -1;
+        if (!aTitle && bTitle) return 1;
+      }
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
   }, [items, selectedCategory, selectedPurpose, selectedLocation, searchKeyword]);
 

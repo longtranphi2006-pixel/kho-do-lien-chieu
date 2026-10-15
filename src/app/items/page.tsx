@@ -45,6 +45,13 @@ function CatalogContent() {
         return true;
       })
       .sort((a, b) => {
+        if (search.trim()) {
+          const q = search.trim().toLowerCase();
+          const aTitle = a.title.toLowerCase().includes(q);
+          const bTitle = b.title.toLowerCase().includes(q);
+          if (aTitle && !bTitle) return -1;
+          if (!aTitle && bTitle) return 1;
+        }
         if (sortBy === 'popular') {
           return b.favorites_count - a.favorites_count;
         }

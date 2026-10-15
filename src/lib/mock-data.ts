@@ -709,7 +709,7 @@ export const MOCK_ITEMS: Item[] = [
     id: 'item-22',
     user_id: 'usr-mai-supham',
     title: 'Kệ sách để bàn gỗ thông 3 tầng mini',
-    description: 'Kệ gỗ thông tự nhiên đã đánh bóng nhẵn mịn, để vừa tập vở và các loại giáo trình A4, giúp góc học tập phòng trọ ngăn nắp.',
+    description: 'Kệ gỗ thông tự nhiên đã chà nhẵn mịn, phủ sơn lau mộc cao cấp, để vừa tập vở và các loại giáo trình A4, giúp góc học tập phòng trọ ngăn nắp.',
     category: 'Đồ dùng học tập',
     condition: 'LIKE_NEW',
     purpose: 'FREE',
