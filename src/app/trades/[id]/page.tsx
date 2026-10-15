@@ -316,6 +316,10 @@ function TradeStepperContent() {
 
   const handleAdvance = (nextStatus: TradeStatus) => {
     if (!transaction) return;
+    if (isCancelled) {
+      alert('Phiên giao dịch này đã bị hủy bỏ và đưa về trạng thái ban đầu bởi Ban Quản Trị.');
+      return;
+    }
     if (!isParticipant) {
       alert('Bạn đang xem với tư cách Quản trị viên / Giám sát. Chỉ người tham gia trực tiếp mới có quyền thao tác tiến trình này.');
       return;
@@ -344,6 +348,10 @@ function TradeStepperContent() {
 
   const handleConfirmRole = (role: 'giver' | 'receiver') => {
     if (!transaction) return;
+    if (isCancelled) {
+      alert('Phiên giao dịch này đã bị hủy bỏ và đưa về trạng thái ban đầu bởi Ban Quản Trị.');
+      return;
+    }
     if (!isParticipant) {
       alert('Bạn đang xem với tư cách Quản trị viên / Giám sát. Chỉ người tham gia trực tiếp mới có quyền xác nhận tiến trình này.');
       return;
@@ -396,6 +404,10 @@ function TradeStepperContent() {
   const handleSendChatMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!transaction || !chatInput.trim() || isSendingMsg) return;
+    if (isCancelled) {
+      alert('Phiên giao dịch này đã bị hủy bỏ và đưa về trạng thái ban đầu, không thể tiếp tục gửi tin nhắn.');
+      return;
+    }
     if (isItemDeleted) {
       alert('Món đồ này đã bị xóa khỏi kho đồ, không thể gửi tin nhắn.');
       return;

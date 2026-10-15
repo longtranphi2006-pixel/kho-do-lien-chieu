@@ -2087,29 +2087,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 1. Update transaction status to CANCELLED and reset confirmations
     setTransactions((prev) => {
-      const exists = prev.some((t) => t.id === transactionId);
-      const next = exists
-        ? prev.map((t) =>
-            t.id === transactionId
-              ? {
-                  ...t,
-                  status: 'CANCELLED' as TradeStatus,
-                  giver_confirmed: false,
-                  receiver_confirmed: false,
-                  completed_at: undefined,
-                }
-              : t
-          )
-        : [
-            {
-              ...trans,
-              status: 'CANCELLED' as TradeStatus,
-              giver_confirmed: false,
-              receiver_confirmed: false,
-              completed_at: undefined,
-            },
-            ...prev,
-          ];
+      const next = prev.map((t) => {
+        const isTarget = t.id === transactionId || (isAdmin && trans.item_id && t.item_id === trans.item_id && t.status !== 'COMPLETED');
+        if (isTarget) {
+          return {
+            ...t,
+            status: 'CANCELLED' as TradeStatus,
+            giver_confirmed: false,
+            receiver_confirmed: false,
+            completed_at: undefined,
+          };
+        }
+        return t;
+      });
+      if (!next.some((t) => t.id === transactionId)) {
+        next.unshift({
+          ...trans,
+          status: 'CANCELLED' as TradeStatus,
+          giver_confirmed: false,
+          receiver_confirmed: false,
+          completed_at: undefined,
+        });
+      }
       try {
         localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
       } catch {}
@@ -2117,19 +2116,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     // 2. Return item to ACTIVE (initial state like newly posted)
-    updateItem(trans.item_id, { status: 'ACTIVE' });
+    if (trans.item_id) {
+      updateItem(trans.item_id, { status: 'ACTIVE' });
+    }
     if (isSupabaseConfigured() && supabase) {
       try {
-        await Promise.race([
-          Promise.all([
-            supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id),
-            supabase.from('transactions').update({
+        const itemPromise = trans.item_id
+          ? supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id)
+          : Promise.resolve();
+
+        const tradePromise = isAdmin && trans.item_id
+          ? supabase.from('transactions').update({
               status: 'CANCELLED',
               giver_confirmed: false,
               receiver_confirmed: false,
               completed_at: null,
-            }).eq('id', transactionId),
-          ]),
+            }).eq('item_id', trans.item_id).neq('status', 'COMPLETED')
+          : supabase.from('transactions').update({
+              status: 'CANCELLED',
+              giver_confirmed: false,
+              receiver_confirmed: false,
+              completed_at: null,
+            }).eq('id', transactionId);
+
+        await Promise.race([
+          Promise.all([itemPromise, tradePromise]),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase cancel trade timeout')), 4000)),
         ]);
       } catch (err) {
@@ -2138,6 +2149,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     broadcastKdlcSync('TRADE_CANCELLED', transactionId);
+    if (trans.item_id) {
+      broadcastKdlcSync('ITEM_RESTORED', trans.item_id);
+    }
 
     // 4. Notifications
     const remainingWaitlist = transactions.filter(

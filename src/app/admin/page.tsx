@@ -1182,7 +1182,7 @@ function AdminDashboardPageContent() {
                                   : 'bg-amber-100 text-amber-800'
                               }`}
                             >
-                              {tradeStatus === 'CANCELLED' ? '🔒 Đã khóa GD' : tradeStatus}
+                              {tradeStatus === 'CANCELLED' ? '🔒 Đã hủy / Đưa về ban đầu' : tradeStatus}
                             </span>
                           );
                         })()}
@@ -1195,25 +1195,25 @@ function AdminDashboardPageContent() {
                               type="button"
                               onClick={() => {
                                 triggerConfirm({
-                                  title: 'Khóa giao dịch',
-                                  message: `Khóa giao dịch #${tr.id} và hoàn trả món đồ về trạng thái ban đầu (như lúc mới đăng)?`,
-                                  subMessage: 'Phiên giao dịch sẽ bị khóa và người dùng khác có thể tiếp tục nhận món đồ này.',
-                                  confirmText: 'Khóa GD & Trả về kho',
+                                  title: 'Hủy giao dịch & Trả về trạng thái ban đầu',
+                                  message: `Hủy giao dịch #${tr.id} và đưa món đồ về trạng thái ban đầu (như lúc mới đăng)?`,
+                                  subMessage: 'Phiên giao dịch sẽ bị hủy bỏ và người dùng khác có thể tiếp tục nhận món đồ này.',
+                                  confirmText: 'Hủy & Trả về ban đầu',
                                   variant: 'danger',
-                                  iconType: 'lock',
+                                  iconType: 'warning',
                                   onConfirm: async () => {
                                     setOptimisticTradeStatus((prev) => ({ ...prev, [tr.id]: 'CANCELLED' }));
                                     if (tr.item_id) {
                                       setOptimisticItemStatus((prev) => ({ ...prev, [tr.item_id]: 'ACTIVE' }));
                                     }
-                                    await cancelTrade(tr.id, 'Khóa bởi Admin');
+                                    await cancelTrade(tr.id, 'Hủy giao dịch & Trả về trạng thái ban đầu bởi Admin');
                                   },
                                 });
                               }}
                               className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 active:scale-95"
-                              title="Khóa giao dịch và đưa món đồ về ban đầu"
+                              title="Hủy giao dịch và đưa món đồ về trạng thái ban đầu"
                             >
-                              <Lock className="w-3 h-3" /> Khóa GD
+                              <RotateCcw className="w-3 h-3" /> Hủy & Trả về ban đầu
                             </button>
                           ) : tradeStatus === 'CANCELLED' ? (
                             <button
@@ -1422,9 +1422,11 @@ function AdminDashboardPageContent() {
                   return false;
                 });
 
-                // Prioritize active trades (not cancelled, not completed), then sort newest first
-                const targetTrade = candidateTrades.find((t) => t.status !== 'CANCELLED' && t.status !== 'COMPLETED')
-                  || [...candidateTrades].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+                // Prioritize active trades (not cancelled, not completed), taking optimistic status into account
+                const targetTrade = candidateTrades.find((t) => {
+                  const st = optimisticTradeStatus[t.id] || t.status;
+                  return st !== 'CANCELLED' && st !== 'COMPLETED';
+                }) || [...candidateTrades].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
 
                 const actualTradeId = extractedTradeId || targetTrade?.id || (report.target_type === 'TRADE' ? report.target_id : undefined);
                 const currentTrade = actualTradeId ? (transactions.find((t) => t.id === actualTradeId) || targetTrade) : targetTrade;
@@ -1710,7 +1712,7 @@ function AdminDashboardPageContent() {
                                       {actualTradeId ? (
                                         isTradeCancelled ? (
                                           <span className="text-[10px] text-rose-700 font-bold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
-                                            Đang bị khóa
+                                            Đã hủy / Đưa về ban đầu
                                           </span>
                                         ) : (
                                           <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
@@ -1775,29 +1777,38 @@ function AdminDashboardPageContent() {
                                             type="button"
                                             onClick={() => {
                                               triggerConfirm({
-                                                title: 'Khóa giao dịch & Trả về kho',
-                                                message: `Bạn có chắc muốn KHÓA giao dịch #${actualTradeId} và đưa trạng thái món đồ về ban đầu (như lúc mới đăng)?`,
-                                                subMessage: 'Phiên giao dịch sẽ bị đóng băng và món đồ sẽ xuất hiện lại trên kho đồ.',
-                                                confirmText: 'Khóa GD & Trả về kho',
+                                                title: 'Hủy giao dịch & Trả về trạng thái ban đầu',
+                                                message: `Bạn có chắc muốn HỦY giao dịch #${actualTradeId} và đưa trạng thái món đồ về ban đầu (như lúc mới đăng)?`,
+                                                subMessage: 'Phiên giao dịch sẽ bị hủy hoàn toàn, người tham gia không thể tiếp tục giao dịch, và món đồ sẽ xuất hiện lại trên kho đồ.',
+                                                confirmText: 'Hủy GD & Về ban đầu',
                                                 variant: 'danger',
                                                 iconType: 'lock',
                                                 onConfirm: async () => {
-                                                  // 0ms Optimistic UI update
-                                                  setOptimisticTradeStatus((prev) => ({ ...prev, [actualTradeId]: 'CANCELLED' }));
+                                                  // 0ms Optimistic UI update: mark all candidate trades as CANCELLED to prevent flickering
+                                                  const tradesToCancel = candidateTrades && candidateTrades.length > 0 ? candidateTrades : [{ id: actualTradeId }];
+                                                  setOptimisticTradeStatus((prev) => {
+                                                    const next = { ...prev };
+                                                    tradesToCancel.forEach((t: any) => {
+                                                      next[t.id] = 'CANCELLED';
+                                                    });
+                                                    return next;
+                                                  });
                                                   if (actualItemId) {
                                                     setOptimisticItemStatus((prev) => ({ ...prev, [actualItemId]: 'ACTIVE' }));
                                                   }
-                                                  setReportActionMsg(`Đã khóa giao dịch #${actualTradeId} và đưa món đồ về trạng thái ban đầu.`);
+                                                  setReportActionMsg(`Đã hủy giao dịch #${actualTradeId} và đưa món đồ về trạng thái ban đầu.`);
                                                   setActionProcessing((prev) => ({ ...prev, ['trade_' + actualTradeId]: true }));
                                                   try {
-                                                    await cancelTrade(actualTradeId, 'Admin khóa giao dịch do vi phạm quy tắc cộng đồng');
+                                                    await cancelTrade(actualTradeId, 'Hủy giao dịch & Trả về trạng thái ban đầu bởi Admin');
                                                   } catch (err: any) {
                                                     setOptimisticTradeStatus((prev) => {
                                                       const copy = { ...prev };
-                                                      delete copy[actualTradeId];
+                                                      tradesToCancel.forEach((t: any) => {
+                                                        delete copy[t.id];
+                                                      });
                                                       return copy;
                                                     });
-                                                    setReportActionMsg('Lỗi khi khóa giao dịch: ' + (err?.message || 'Không thể thực hiện'));
+                                                    setReportActionMsg('Lỗi khi hủy giao dịch: ' + (err?.message || 'Không thể thực hiện'));
                                                   } finally {
                                                     setActionProcessing((prev) => ({ ...prev, ['trade_' + actualTradeId]: false }));
                                                   }
@@ -1805,9 +1816,9 @@ function AdminDashboardPageContent() {
                                               });
                                             }}
                                             className="px-2.5 py-1.5 rounded-lg bg-rose-700 text-white hover:bg-rose-800 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs transition-all active:scale-95"
-                                            title="Khóa giao dịch và đưa trạng thái món đồ về ban đầu"
+                                            title="Hủy giao dịch và đưa trạng thái món đồ về ban đầu"
                                           >
-                                            <Lock className="w-3.5 h-3.5" /> Khóa giao dịch & Trả về kho
+                                            <RotateCcw className="w-3.5 h-3.5" /> Hủy giao dịch & Trả về trạng thái ban đầu
                                           </button>
                                         )}
                                       </div>
@@ -1817,7 +1828,7 @@ function AdminDashboardPageContent() {
                                           <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                           Món đồ này hiện chưa phát sinh giao dịch nào (chưa có người nhận đồ).
                                         </span>
-                                        <span className="text-[10px] text-slate-400 italic shrink-0">Không có GD để khóa</span>
+                                        <span className="text-[10px] text-slate-400 italic shrink-0">Không có GD để hủy</span>
                                       </div>
                                     )}
                                   </div>
