@@ -112,6 +112,18 @@ const STORAGE_KEYS = {
   DELETED_ITEM_IDS: 'kdlc_deleted_item_ids_v4',
 };
 
+export const safeSaveStorage = (key: string, value: string) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const existing = localStorage.getItem(key);
+    if (existing !== value) {
+      localStorage.setItem(key, value);
+    }
+  } catch {}
+};
+
+let reportsTableAvailable: boolean | null = null;
+
 export const broadcastKdlcSync = (type: string, id?: string) => {
   if (typeof window === 'undefined') return;
   try {
@@ -120,7 +132,7 @@ export const broadcastKdlcSync = (type: string, id?: string) => {
     bc.close();
   } catch {}
   try {
-    localStorage.setItem('kdlc_cross_tab_ping', `${type}_${id || ''}_${Date.now()}`);
+    safeSaveStorage('kdlc_cross_tab_ping', `${type}_${id || ''}_${Date.now()}`);
   } catch {}
   window.dispatchEvent(new CustomEvent('kdlc-items-updated'));
   window.dispatchEvent(new CustomEvent('kdlc-trades-updated'));
@@ -279,66 +291,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  // Cross-tab synchronization listener
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    let bc: BroadcastChannel | null = null;
-    const reloadFromStorage = () => {
-      try {
-        const savedDeleted = localStorage.getItem(STORAGE_KEYS.DELETED_ITEM_IDS);
-        if (savedDeleted) setDeletedItemIds(new Set(JSON.parse(savedDeleted)));
-      } catch {}
-      try {
-        const savedItems = localStorage.getItem(STORAGE_KEYS.ITEMS);
-        if (savedItems) setItems(JSON.parse(savedItems));
-      } catch {}
-      try {
-        const savedTrans = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-        if (savedTrans) setTransactions(JSON.parse(savedTrans));
-      } catch {}
-      try {
-        const savedReports = localStorage.getItem(STORAGE_KEYS.REPORTS);
-        if (savedReports) setReports(JSON.parse(savedReports));
-      } catch {}
-    };
-
-    try {
-      bc = new BroadcastChannel('kdlc_cross_tab_channel');
-      bc.onmessage = () => {
-        reloadFromStorage();
-      };
-    } catch {}
-
-    const handleStorage = (e: StorageEvent) => {
-      if (
-        e.key === STORAGE_KEYS.ITEMS ||
-        e.key === STORAGE_KEYS.TRANSACTIONS ||
-        e.key === STORAGE_KEYS.DELETED_ITEM_IDS ||
-        e.key === 'kdlc_cross_tab_ping'
-      ) {
-        reloadFromStorage();
-      }
-    };
-    window.addEventListener('storage', handleStorage);
-
-    return () => {
-      if (bc) bc.close();
-      window.removeEventListener('storage', handleStorage);
-    };
-  }, []);
-
-  // Save to localStorage when state changes
+  // Save to localStorage when state changes (safeSaveStorage stops cross-tab feedback loops)
   useEffect(() => {
     if (!isInitialized) return;
     try {
-      localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, currentUserId || '');
-      localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(items));
-      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
-      localStorage.setItem(STORAGE_KEYS.REVIEWS, JSON.stringify(reviews));
-      localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
-      localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(favorites));
-      localStorage.setItem(STORAGE_KEYS.REPORTS, JSON.stringify(reports));
+      safeSaveStorage(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
+      safeSaveStorage(STORAGE_KEYS.CURRENT_USER_ID, currentUserId || '');
+      safeSaveStorage(STORAGE_KEYS.ITEMS, JSON.stringify(items));
+      safeSaveStorage(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+      safeSaveStorage(STORAGE_KEYS.REVIEWS, JSON.stringify(reviews));
+      safeSaveStorage(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
+      safeSaveStorage(STORAGE_KEYS.FAVORITES, JSON.stringify(favorites));
+      safeSaveStorage(STORAGE_KEYS.REPORTS, JSON.stringify(reports));
     } catch (e) {
       console.warn('LocalStorage save error', e);
     }
@@ -583,16 +547,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // 6. Reports sync (Dual: Cloud Table + sys-reports-store in profiles)
         let cloudReports: ReportItem[] = [];
 
-        // 6A. Try dedicated 'reports' table if migrated
-        try {
-          const { data: repData, error: repError } = await sb
-            .from('reports')
-            .select('*')
-            .order('created_at', { ascending: false });
-          if (!repError && Array.isArray(repData) && repData.length > 0) {
-            cloudReports = repData as ReportItem[];
+        // 6A. Try dedicated 'reports' table if migrated & available
+        if (reportsTableAvailable !== false) {
+          try {
+            const { data: repData, error: repError } = await sb
+              .from('reports')
+              .select('*')
+              .order('created_at', { ascending: false });
+            if (repError) {
+              if (repError.code === '42P01' || repError.message?.includes('does not exist') || (repError as any).status === 404) {
+                reportsTableAvailable = false;
+              }
+            } else if (Array.isArray(repData)) {
+              reportsTableAvailable = true;
+              if (repData.length > 0) {
+                cloudReports = repData as ReportItem[];
+              }
+            }
+          } catch {
+            reportsTableAvailable = false;
           }
-        } catch {}
+        }
 
         // 6B. Check 'sys-reports-store' fallback record in profiles table
         try {
@@ -1753,7 +1728,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         try {
           await ensureProfileInSupabase(targetItem.donor || targetItem.user_id);
           await ensureProfileInSupabase(currentUser || receiverId);
-          await sb.from('transactions').upsert(newTransaction);
+          const { item, giver, receiver, ...dbTrade } = newTransaction;
+          await sb.from('transactions').upsert(dbTrade);
           await sb.from('notifications').upsert(donorNotif);
         } catch (err) {
           console.error('Supabase createTradeRequest error:', err);
@@ -2088,7 +2064,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 1. Update transaction status to CANCELLED and reset confirmations
     setTransactions((prev) => {
       const next = prev.map((t) => {
-        const isTarget = t.id === transactionId || (isAdmin && trans.item_id && t.item_id === trans.item_id && t.status !== 'COMPLETED');
+        const isTarget = t.id === transactionId || (trans.item_id && t.item_id === trans.item_id && t.status !== 'COMPLETED');
         if (isTarget) {
           return {
             ...t,
@@ -2109,9 +2085,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           completed_at: undefined,
         });
       }
-      try {
-        localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
-      } catch {}
+      safeSaveStorage(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
       return next;
     });
 
@@ -2125,7 +2099,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ? supabase.from('items').update({ status: 'ACTIVE' }).eq('id', trans.item_id)
           : Promise.resolve();
 
-        const tradePromise = isAdmin && trans.item_id
+        const tradePromise = trans.item_id
           ? supabase.from('transactions').update({
               status: 'CANCELLED',
               giver_confirmed: false,
@@ -2139,12 +2113,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               completed_at: null,
             }).eq('id', transactionId);
 
-        await Promise.race([
-          Promise.all([itemPromise, tradePromise]),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase cancel trade timeout')), 4000)),
-        ]);
+        const singleTradePromise = supabase.from('transactions').update({
+          status: 'CANCELLED',
+          giver_confirmed: false,
+          receiver_confirmed: false,
+          completed_at: null,
+        }).eq('id', transactionId);
+
+        await Promise.allSettled([itemPromise, tradePromise, singleTradePromise]);
       } catch (err) {
-        console.warn('Supabase cancel trade error/timeout:', err);
+        console.warn('Supabase cancel trade error:', err);
       }
     }
 

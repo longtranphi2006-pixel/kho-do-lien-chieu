@@ -1202,7 +1202,14 @@ function AdminDashboardPageContent() {
                                   variant: 'danger',
                                   iconType: 'warning',
                                   onConfirm: async () => {
-                                    setOptimisticTradeStatus((prev) => ({ ...prev, [tr.id]: 'CANCELLED' }));
+                                    const tradesToCancel = tr.item_id ? transactions.filter((t) => t.item_id === tr.item_id) : [tr];
+                                    setOptimisticTradeStatus((prev) => {
+                                      const next = { ...prev };
+                                      tradesToCancel.forEach((t) => {
+                                        next[t.id] = 'CANCELLED';
+                                      });
+                                      return next;
+                                    });
                                     if (tr.item_id) {
                                       setOptimisticItemStatus((prev) => ({ ...prev, [tr.item_id]: 'ACTIVE' }));
                                     }
@@ -1422,11 +1429,8 @@ function AdminDashboardPageContent() {
                   return false;
                 });
 
-                // Prioritize active trades (not cancelled, not completed), taking optimistic status into account
-                const targetTrade = candidateTrades.find((t) => {
-                  const st = optimisticTradeStatus[t.id] || t.status;
-                  return st !== 'CANCELLED' && st !== 'COMPLETED';
-                }) || [...candidateTrades].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+                // Stable trade selection: always anchor to newest trade for this report/item so room ID does NOT jitter
+                const targetTrade = [...candidateTrades].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
 
                 const actualTradeId = extractedTradeId || targetTrade?.id || (report.target_type === 'TRADE' ? report.target_id : undefined);
                 const currentTrade = actualTradeId ? (transactions.find((t) => t.id === actualTradeId) || targetTrade) : targetTrade;
@@ -1447,6 +1451,7 @@ function AdminDashboardPageContent() {
                 const isTradeCancelled = Boolean(
                   actualTradeId &&
                     (optimisticTradeStatus[actualTradeId] === 'CANCELLED' ||
+                      (candidateTrades.length > 0 && candidateTrades.every((t) => (optimisticTradeStatus[t.id] || t.status) === 'CANCELLED')) ||
                       (currentTrade?.status === 'CANCELLED' && optimisticTradeStatus[actualTradeId] !== 'ACCEPTED'))
                 );
 
