@@ -65,6 +65,7 @@ function ItemDetailContent() {
     toggleFavorite,
     isUserLocked,
     deletedItemIds,
+    isInitialized,
   } = useAppStore();
   const item = getItemById(itemId);
 
@@ -102,51 +103,19 @@ function ItemDetailContent() {
   const [reportTargetUserId, setReportTargetUserId] = useState<string | undefined>(undefined);
   const [reportTargetUserName, setReportTargetUserName] = useState<string | undefined>(undefined);
 
-  const handleOpenReport = (
-    type: ReportTargetType,
-    id: string,
-    title: string,
-    userId?: string,
-    userName?: string
-  ) => {
-    setReportTargetType(type);
-    setReportTargetId(id);
-    setReportTargetTitle(title);
-    setReportTargetUserId(userId);
-    setReportTargetUserName(userName);
-    setReportModalOpen(true);
-  };
-
-  if (deletedItemIds?.has(itemId) || !item) {
-    return (
-      <div className="max-w-3xl mx-auto px-4 py-16 text-center space-y-4">
-        <div className="w-16 h-16 rounded-full bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center mx-auto shadow-sm">
-          <Trash2 className="w-8 h-8" />
-        </div>
-        <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">Món đồ không tồn tại hoặc đã bị xóa</h2>
-        <p className="text-slate-500 text-xs sm:text-sm max-w-md mx-auto leading-relaxed">
-          Món đồ này đã bị Ban Quản Trị xóa vĩnh viễn khỏi toàn bộ hệ thống hoặc không còn tồn tại trên kho đồ.
-        </p>
-        <Link
-          href="/items"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white font-semibold text-sm hover:bg-[#0A3F34] transition-all"
-        >
-          <ArrowLeft className="w-4 h-4" /> Khám phá Kho đồ khác
-        </Link>
-      </div>
-    );
-  }
-
-  const isFavorited = favorites.includes(item.id);
+  const isFavorited = item ? favorites.includes(item.id) : false;
   // Dynamically resolve the donor from allUsers / currentUser for freshest profile info
-  const donorUser = (currentUser && currentUser.id === item.user_id ? currentUser : null) ||
-    allUsers.find((u) => u.id === item.user_id) ||
-    (item.donor?.email ? allUsers.find((u) => u.email && u.email.trim().toLowerCase() === item.donor?.email?.trim().toLowerCase()) : null);
-  const donor = donorUser || item.donor;
+  const donorUser = item
+    ? (currentUser && currentUser.id === item.user_id ? currentUser : null) ||
+      allUsers.find((u) => u.id === item.user_id) ||
+      (item.donor?.email ? allUsers.find((u) => u.email && u.email.trim().toLowerCase() === item.donor?.email?.trim().toLowerCase()) : null)
+    : null;
+  const donor = donorUser || item?.donor;
 
   // Robust donor identification that survives duplicate session IDs / OAuth logins
   const isDonorCurrent = Boolean(
-    currentUser && (
+    currentUser &&
+    item && (
       currentUser.id === item.user_id ||
       (donorUser && donorUser.id === currentUser.id) ||
       (currentUser.email && donor?.email && currentUser.email.trim().toLowerCase() === donor.email.trim().toLowerCase())
@@ -154,9 +123,9 @@ function ItemDetailContent() {
   );
 
   // All non-cancelled transactions for this item
-  const itemTransactions = transactions.filter(
-    (t) => t.item_id === item.id && t.status !== 'CANCELLED'
-  );
+  const itemTransactions = item
+    ? transactions.filter((t) => t.item_id === item.id && t.status !== 'CANCELLED')
+    : [];
 
   // 1. Accepted or ongoing trade (only 1 can be ongoing at a time)
   const activeTrade = itemTransactions.find(
@@ -212,6 +181,7 @@ function ItemDetailContent() {
 
   // Owner edit item handlers
   const handleOpenEditItem = () => {
+    if (!item) return;
     if (isTradingNow) {
       alert('Không thể chỉnh sửa thông tin món đồ khi đang trong tiến trình giao dịch với bạn sinh viên để đảm bảo minh bạch.');
       return;
@@ -227,10 +197,54 @@ function ItemDetailContent() {
   };
 
   React.useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.search.includes('edit=true') && isDonorCurrent) {
+    if (typeof window !== 'undefined' && window.location.search.includes('edit=true') && isDonorCurrent && item) {
       handleOpenEditItem();
     }
-  }, [isDonorCurrent]);
+  }, [isDonorCurrent, item]);
+
+  const handleOpenReport = (
+    type: ReportTargetType,
+    id: string,
+    title: string,
+    userId?: string,
+    userName?: string
+  ) => {
+    setReportTargetType(type);
+    setReportTargetId(id);
+    setReportTargetTitle(title);
+    setReportTargetUserId(userId);
+    setReportTargetUserName(userName);
+    setReportModalOpen(true);
+  };
+
+  if (!isInitialized) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-20 text-center space-y-4">
+        <div className="w-10 h-10 border-3 border-[#0F5B4B] border-t-transparent rounded-full animate-spin mx-auto" />
+        <p className="text-slate-500 text-sm font-medium">Đang tải thông tin món đồ...</p>
+      </div>
+    );
+  }
+
+  if (deletedItemIds?.has(itemId) || !item) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-16 text-center space-y-4">
+        <div className="w-16 h-16 rounded-full bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center mx-auto shadow-sm">
+          <Trash2 className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">Món đồ không tồn tại hoặc đã bị xóa</h2>
+        <p className="text-slate-500 text-xs sm:text-sm max-w-md mx-auto leading-relaxed">
+          Món đồ này đã bị Ban Quản Trị xóa vĩnh viễn khỏi toàn bộ hệ thống hoặc không còn tồn tại trên kho đồ.
+        </p>
+        <Link
+          href="/items"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0F5B4B] text-white font-semibold text-sm hover:bg-[#0A3F34] transition-all"
+        >
+          <ArrowLeft className="w-4 h-4" /> Khám phá Kho đồ khác
+        </Link>
+      </div>
+    );
+  }
 
   const handleSaveEditItem = (e: React.FormEvent) => {
     e.preventDefault();
@@ -542,10 +556,10 @@ function ItemDetailContent() {
           <div className="p-3.5 rounded-xl bg-[#EAF7F2] border border-[#A7E2CB] text-xs text-[#0F5B4B] space-y-1">
             <div className="flex items-center gap-1.5 font-bold">
               <Sparkles className="w-4 h-4 text-emerald-600" />
-              <span>Đã kiểm duyệt an toàn & BQL Kho Đồ</span>
+              <span>Bài đăng đã được kiểm tra nội dung</span>
             </div>
             <p className="text-[11px] leading-relaxed opacity-90">
-              {item.ai_moderation_reason || 'Bài đăng đáp ứng đầy đủ tiêu chí phi thương mại và an toàn cộng đồng sinh viên.'}
+              Nội dung phù hợp quy định cộng đồng. Tình trạng thực tế của món đồ do hai bên tự kiểm tra khi trao nhận.
             </p>
           </div>
         </div>
@@ -666,7 +680,10 @@ function ItemDetailContent() {
                   )}
                 </div>
                 <p className="text-xs text-slate-500 truncate mt-0.5">
-                  {donor?.university || 'Đại học Bách Khoa - ĐHĐN'} {donor?.department ? `• ${donor.department}` : ''}
+                  {donor?.university || 'Đại học Bách Khoa - ĐHĐN'}{' '}
+                  {donor?.department
+                    ? `• ${donor.department.replace('Sinh viên xác thực qua', 'Tài khoản đăng nhập bằng')}`
+                    : ''}
                 </p>
               </div>
             </div>

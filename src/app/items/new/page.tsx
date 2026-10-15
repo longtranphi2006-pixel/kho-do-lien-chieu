@@ -71,7 +71,7 @@ const processImageFile = (file: File): Promise<string> => {
 
 export default function NewItemPage() {
   const router = useRouter();
-  const { addItem, currentUser, isUserLocked } = useAppStore();
+  const { addItem, currentUser, isUserLocked, isInitialized } = useAppStore();
 
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -91,13 +91,14 @@ export default function NewItemPage() {
   const [moderationResult, setModerationResult] = useState<ModerationResult | null>(null);
 
   React.useEffect(() => {
+    if (!isInitialized) return;
     if (!currentUser) {
       router.push('/auth?redirect=/items/new');
     } else if (isUserLocked(currentUser)) {
       alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai.');
       router.push('/items');
     }
-  }, [currentUser, isUserLocked, router]);
+  }, [isInitialized, currentUser, isUserLocked, router]);
 
   const handleFilesSelected = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
@@ -201,6 +202,15 @@ export default function NewItemPage() {
       router.push(`/items/${created.id}`);
     }
   };
+
+  if (!isInitialized) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-20 text-center space-y-4">
+        <div className="w-10 h-10 border-3 border-[#0F5B4B] border-t-transparent rounded-full animate-spin mx-auto" />
+        <p className="text-slate-500 text-sm font-medium">Đang kiểm tra thông tin tài khoản...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-6">
@@ -376,7 +386,7 @@ export default function NewItemPage() {
               </div>
               <div className="text-left">
                 <div className="font-bold text-sm">Cho miễn phí</div>
-                <div className="text-[11px] opacity-80">Tặng lại bạn cần, 0đ</div>
+                <div className="text-[11px] opacity-80">Tặng lại bạn cần, miễn phí</div>
               </div>
             </button>
 

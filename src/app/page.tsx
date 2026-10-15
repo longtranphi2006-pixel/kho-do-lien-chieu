@@ -82,7 +82,7 @@ export default function HomePage() {
                 </>
               ) : (
                 <>
-                  Chào mừng bạn đến với <strong className="font-bold">Kho Đồ Liên Chiểu</strong> • Mạng lưới chia sẻ đồ dùng sinh viên & cư dân Hòa Khánh, Đà Nẵng.
+                  Chào mừng bạn đến với <strong className="font-bold">Kho Đồ Liên Chiểu</strong> • Mạng lưới chia sẻ đồ dùng cộng đồng • Liên Chiểu, Đà Nẵng.
                 </>
               )}
             </span>
@@ -110,7 +110,7 @@ export default function HomePage() {
             </div>
 
             <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight leading-tight sm:leading-tight">
-              Chia sẻ đồ dùng, gắn kết giảng đường
+              Chia sẻ đồ dùng, kết nối cộng đồng
             </h1>
 
             <p className="text-emerald-100/90 text-sm sm:text-base leading-relaxed">

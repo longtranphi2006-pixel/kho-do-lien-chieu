@@ -139,7 +139,7 @@ const processAvatarFile = (file: File): Promise<string> => {
 };
 
 export default function ProfilePage() {
-  const { currentUser, items, transactions, reviews, updateProfile, updateItem, deleteItem, isUserLocked } = useAppStore();
+  const { currentUser, items, transactions, reviews, updateProfile, updateItem, deleteItem, isUserLocked, isInitialized } = useAppStore();
   const [activeTab, setActiveTab] = useState<'items' | 'trades' | 'reviews'>('items');
 
   // Edit Profile Modal State (10 User-Specified Fields)
@@ -162,29 +162,11 @@ export default function ProfilePage() {
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  if (!currentUser) {
-    return (
-      <div className="max-w-md mx-auto px-4 py-16 text-center space-y-4">
-        <div className="w-16 h-16 rounded-full bg-[#EAF7F2] text-[#0F5B4B] flex items-center justify-center mx-auto">
-          <GraduationCap className="w-8 h-8" />
-        </div>
-        <h2 className="text-xl sm:text-2xl font-bold text-slate-800">
-          Chưa đăng nhập tài khoản
-        </h2>
-        <p className="text-slate-500 text-sm">
-          Vui lòng đăng nhập tài khoản sinh viên hoặc cư dân Liên Chiểu để xem hồ sơ và điểm uy tín.
-        </p>
-        <Link
-          href="/auth"
-          className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#0F5B4B] text-white font-bold text-sm hover:bg-[#0A3F34] shadow-md shadow-[#0F5B4B]/20"
-        >
-          Đăng nhập ngay
-        </Link>
-      </div>
-    );
-  }
+  const [itemStatusFilter, setItemStatusFilter] = useState<'ACTIVE' | 'COMPLETED' | 'ALL'>('ACTIVE');
+  const [profileActionMsg, setProfileActionMsg] = useState<string | null>(null);
 
   const handleOpenEdit = () => {
+    if (!currentUser) return;
     if (isUserLocked(currentUser)) {
       alert('Tài khoản của bạn đang bị khóa tất cả chức năng và chỉ được hoạt động ở chế độ vãng lai. Bạn không thể chỉnh sửa thông tin lúc này.');
       return;
@@ -206,10 +188,78 @@ export default function ProfilePage() {
   };
 
   React.useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.search.includes('edit=true')) {
+    if (typeof window !== 'undefined' && window.location.search.includes('edit=true') && currentUser) {
       handleOpenEdit();
     }
   }, [currentUser]);
+
+  // Transactions involving current user (deduplicated per item so each item has at most 1 progress)
+  const userTrades = React.useMemo(() => {
+    if (!currentUser) return [];
+    const raw = transactions.filter(
+      (t) =>
+        t.status !== 'CANCELLED' &&
+        t.id !== 'tr-001' &&
+        t.id !== 'tr-002' &&
+        (t.giver_id === currentUser.id || t.receiver_id === currentUser.id)
+    );
+
+    const result: typeof raw = [];
+    const giverItemIds = new Set<string>();
+
+    raw.forEach((t) => {
+      if (t.giver_id === currentUser.id) {
+        if (!giverItemIds.has(t.item_id)) {
+          const itemTrades = raw.filter(
+            (other) => other.giver_id === currentUser.id && other.item_id === t.item_id
+          );
+          const activeTrade = itemTrades.find(
+            (x) => x.status === 'ACCEPTED' || x.status === 'HANDED_OVER'
+          );
+          const chosen = activeTrade || itemTrades[0];
+          result.push(chosen);
+          giverItemIds.add(t.item_id);
+        }
+      } else {
+        result.push(t);
+      }
+    });
+
+    return result;
+  }, [transactions, currentUser]);
+
+  // Wait for store hydration to avoid flashing or hook mismatch
+  if (!isInitialized) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-20 text-center space-y-4 animate-pulse">
+        <div className="w-16 h-16 rounded-3xl bg-[#EAF7F2] mx-auto" />
+        <div className="h-6 bg-slate-100 rounded-full w-48 mx-auto" />
+        <div className="h-4 bg-slate-100 rounded-full w-64 mx-auto" />
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center space-y-4">
+        <div className="w-16 h-16 rounded-full bg-[#EAF7F2] text-[#0F5B4B] flex items-center justify-center mx-auto">
+          <GraduationCap className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-800">
+          Chưa đăng nhập tài khoản
+        </h2>
+        <p className="text-slate-500 text-sm">
+          Vui lòng đăng nhập tài khoản sinh viên hoặc cư dân Liên Chiểu để xem hồ sơ và điểm uy tín.
+        </p>
+        <Link
+          href="/auth"
+          className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#0F5B4B] text-white font-bold text-sm hover:bg-[#0A3F34] shadow-md shadow-[#0F5B4B]/20"
+        >
+          Đăng nhập ngay
+        </Link>
+      </div>
+    );
+  }
 
   const handleAvatarFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -263,7 +313,6 @@ export default function ProfilePage() {
 
   // Items posted by current user
   const userItems = items.filter((i) => i.user_id === currentUser.id);
-  const [itemStatusFilter, setItemStatusFilter] = useState<'ACTIVE' | 'COMPLETED' | 'ALL'>('ACTIVE');
   const activeUserItems = userItems.filter((i) => i.status !== 'COMPLETED');
   const completedUserItems = userItems.filter((i) => i.status === 'COMPLETED');
   const displayedUserItems = itemStatusFilter === 'ACTIVE'
@@ -272,45 +321,8 @@ export default function ProfilePage() {
     ? completedUserItems
     : userItems;
 
-  // Transactions involving current user (deduplicated per item so each item has at most 1 progress)
-  const userTrades = React.useMemo(() => {
-    if (!currentUser) return [];
-    const raw = transactions.filter(
-      (t) =>
-        t.status !== 'CANCELLED' &&
-        t.id !== 'tr-001' &&
-        t.id !== 'tr-002' &&
-        (t.giver_id === currentUser.id || t.receiver_id === currentUser.id)
-    );
-
-    const result: typeof raw = [];
-    const giverItemIds = new Set<string>();
-
-    raw.forEach((t) => {
-      if (t.giver_id === currentUser.id) {
-        if (!giverItemIds.has(t.item_id)) {
-          const itemTrades = raw.filter(
-            (other) => other.giver_id === currentUser.id && other.item_id === t.item_id
-          );
-          const activeTrade = itemTrades.find(
-            (x) => x.status === 'ACCEPTED' || x.status === 'HANDED_OVER'
-          );
-          const chosen = activeTrade || itemTrades[0];
-          result.push(chosen);
-          giverItemIds.add(t.item_id);
-        }
-      } else {
-        result.push(t);
-      }
-    });
-
-    return result;
-  }, [transactions, currentUser]);
-
   // Reviews for this user
   const userReviews = reviews.filter((r) => r.reviewee_id === currentUser.id);
-
-  const [profileActionMsg, setProfileActionMsg] = useState<string | null>(null);
 
   const isItemTrading = (itemId: string) => {
     return transactions.some(
@@ -801,7 +813,7 @@ export default function ProfilePage() {
                               : 'bg-indigo-600/90 text-white'
                           }`}
                         >
-                          {item.purpose === 'FREE' ? '🎁 Tặng 0đ' : '🔄 Đổi đồ'}
+                          {item.purpose === 'FREE' ? '🎁 Tặng miễn phí' : '🔄 Đổi đồ'}
                         </span>
                       </div>
 

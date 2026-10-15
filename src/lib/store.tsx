@@ -96,6 +96,7 @@ interface AppContextType {
   deletedItemIds: Set<string>;
   isSupabaseMode: boolean;
   activeRole: 'user' | 'admin' | 'guest';
+  isInitialized: boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -173,6 +174,10 @@ export const hydrateProfile = (p: Profile): Profile => {
     } catch {}
   }
 
+  if (updated.department && updated.department.includes('Sinh viên xác thực qua')) {
+    updated.department = updated.department.replace('Sinh viên xác thực qua', 'Tài khoản đăng nhập bằng');
+  }
+
   // Auto-expire lock if time has passed
   if (updated.is_locked && updated.locked_until) {
     const until = new Date(updated.locked_until).getTime();
@@ -186,8 +191,32 @@ export const hydrateProfile = (p: Profile): Profile => {
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [profiles, setProfiles] = useState<Profile[]>(() => MOCK_PROFILES.map(hydrateProfile));
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<Profile[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedProfiles = localStorage.getItem(STORAGE_KEYS.PROFILES);
+        if (savedProfiles) {
+          const parsed = JSON.parse(savedProfiles) as Profile[];
+          return parsed.map(hydrateProfile);
+        }
+      } catch {}
+    }
+    return MOCK_PROFILES.map(hydrateProfile);
+  });
+  const [currentUserId, setCurrentUserId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        let savedUserId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
+        if (savedUserId === 'usr-oauth-1791902102209') {
+          savedUserId = 'usr-oauth-1791897070645';
+        }
+        if (savedUserId && savedUserId.trim() !== '') {
+          return savedUserId;
+        }
+      } catch {}
+    }
+    return null;
+  });
   const [deletedItemIds, setDeletedItemIds] = useState<Set<string>>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -923,7 +952,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
       email: cleanEmail,
       university: 'Đại học Đà Nẵng',
-      department: 'Sinh viên xác thực qua ' + params.provider,
+      department: 'Tài khoản đăng nhập bằng ' + params.provider,
       is_verified: true,
       reputation_score: 0,
       items_given_count: 0,
@@ -2451,6 +2480,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deletedItemIds,
         isSupabaseMode: isSupabaseConfigured(),
         activeRole: currentUser ? (isUserLocked(currentUser) ? 'guest' : currentUser.role) : 'guest',
+        isInitialized,
       }}
     >
       {children}

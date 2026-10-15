@@ -90,6 +90,7 @@ function AdminDashboardPageContent() {
     restoreTrade,
     deletedItemIds,
     isSupabaseMode,
+    isInitialized,
   } = useAppStore();
 
   // Optimistic UI state for 0ms instant response on Admin actions
@@ -203,6 +204,17 @@ function AdminDashboardPageContent() {
   }, []);
 
   const isAdmin = currentUser?.role === 'admin';
+
+  if (!isInitialized) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center px-4 py-12">
+        <div className="text-center space-y-3">
+          <div className="w-9 h-9 border-3 border-[#0F5B4B] border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-slate-500 text-sm font-medium">Đang kiểm tra quyền quản trị viên...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Strict Route Guard: If not admin, show 403 Forbidden screen
   if (!isAdmin) {
